@@ -1,0 +1,36 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax check
+        run: |
+          errors=0
+          while IFS= read -r f; do
+            echo "Checking $f..."
+            bash -n "$f" || { echo "✗ Syntax error in $f"; errors=$((errors + 1)); }
+          done < <(find . -name '*.sh' -not -path './.git/*')
+          if [ "$errors" -eq 0 ]; then
+            echo "✓ All scripts pass syntax check"
+          else
+            echo "✗ $errors script(s) have syntax errors"
+            exit 1
+          fi
+
+      - name: ShellCheck lint
+        run: |
+          errors=0
+          while IFS= read -r f; do
+            echo "=== ShellCheck: $f ==="
+            shellcheck --severity=error "$f" || { echo "✗ ShellCheck found issues in $f"; errors=$((errors + 1)); }
+          done < <(find . -name '*.sh' -not -path './.git/*')
+          if [ "$errors" -eq 0 ]; then
+            echo "✓ All scripts pass ShellCheck"
+          else
+            echo "✗ $errors script(s) failed ShellCheck"
+            exit 1
+          fi
