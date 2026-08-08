@@ -445,6 +445,10 @@ cat > "$UPDATE_SCRIPT" << 'UPDATE_SCRIPT'
 #
 set -eu
 
+# termux-exec preload breaks glibc binaries — unset it before the very
+# first binary invocation (version detection included)
+unset LD_PRELOAD
+
 OPENCODE_VERSION="@@OPENCODE_VERSION@@"
 OPENCODE_SHA256="@@OPENCODE_SHA256@@"
 BUN_VERSION="@@BUN_VERSION@@"
