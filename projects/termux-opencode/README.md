@@ -129,7 +129,7 @@ Never run `opencode update` directly — it restores the original interpreter an
 bash projects/termux-opencode/uninstall.sh
 ```
 
-Removes the OpenCode binary, launcher, update script, Bun and its launchers, and completions. It also prompts to purge the glibc package stack (interactive `y` defaults to keep on EOF/unattended runs). The optional workspace prompt only appears if `~/opencode` exists — the bootstrap no longer creates one.
+Removes the OpenCode binary, launcher, update script, Bun and its launchers, and completions. It also prompts to purge the glibc package stack (interactive `y` defaults to keep on EOF/unattended runs) and to remove the `~/opencode` workspace. The workspace hook in `.bashrc`/`.zshrc` is stripped on uninstall.
 
 ## Requirements
 

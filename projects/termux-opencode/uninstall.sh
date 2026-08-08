@@ -83,6 +83,8 @@ for rc in ".bashrc" ".zshrc"; do
   RC_FILE="$HOME_DIR/$rc"
   if [ -f "$RC_FILE" ]; then
     sed -i '/opencode\.\(bash\|zsh\)/d' "$RC_FILE" 2>/dev/null || true
+    # Workspace hook (marker comment + cd line) from bootstrap.sh
+    sed -i '/# OpenCode termux workspace/d; /cd .*\/opencode"$/d' "$RC_FILE" 2>/dev/null || true
   fi
 done
 

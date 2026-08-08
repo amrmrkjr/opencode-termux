@@ -138,7 +138,7 @@ No root needed. Everything runs in Termux's standard userspace.
 bash projects/termux-opencode/uninstall.sh
 ```
 
-Removes the OpenCode binary, launcher, update script, Bun and its launchers, and completions. It also prompts to purge the glibc package stack. The optional workspace prompt only appears if `~/opencode` exists — the bootstrap no longer creates one.
+Removes the OpenCode binary, launcher, update script, Bun and its launchers, and completions. It also prompts to purge the glibc package stack and to remove the `~/opencode` workspace. The workspace hook in `.bashrc`/`.zshrc` is stripped on uninstall.
 
 ---
 

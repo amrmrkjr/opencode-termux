@@ -430,6 +430,27 @@ if command -v fish >/dev/null 2>&1; then
   ok "fish completions ready"
 fi
 
+# ─── Create workspace ────────────────────────────────────────────────────────
+# A dedicated project directory for OpenCode sessions. No opencode.json is
+# generated (deprecated terminal/web keys broke newer OpenCode) — OpenCode
+# writes its own config on first run.
+info "Creating workspace…"
+
+WORKSPACE="$HOME_DIR/opencode"
+mkdir -p "$WORKSPACE"
+ok "workspace created: $WORKSPACE"
+
+# Make new shell sessions start inside the workspace. Guarded by a marker
+# comment so uninstall.sh can strip it.
+for rc in ".bashrc" ".zshrc"; do
+  RC_FILE="$HOME_DIR/$rc"
+  [ -f "$RC_FILE" ] || touch "$RC_FILE"
+  if ! grep -q 'OpenCode termux workspace' "$RC_FILE" 2>/dev/null; then
+    printf '\n# OpenCode termux workspace\n[ -d "%s" ] && cd "%s"\n' "$WORKSPACE" "$WORKSPACE" >> "$RC_FILE"
+    ok "new sessions start in the workspace ($rc)"
+  fi
+done
+
 # ─── Create update script ───────────────────────────────────────────────────
 info "Creating update script…"
 
@@ -548,6 +569,11 @@ echo ""
   printf '%s\n' "  ${GREEN}opencode-termux-update${NC}  Safe update (preserves launcher)"
   printf '%s\n' "  ${GREEN}opencode providers${NC}      Add API keys"
   printf '%s\n' "  ${GREEN}bunx${NC}                    Run OpenCode plugins via Bun"
+  printf '%s\n' "  ${GREEN}Workspace:${NC}              $WORKSPACE"
   echo ""
   muted "Never run 'opencode update' directly — use opencode-termux-update instead."
+  muted "New sessions start in the workspace. Run 'cd ~' to leave it."
 echo ""
+
+# End inside the workspace so an interactive or sourced run lands there.
+cd "$WORKSPACE" 2>/dev/null || true
