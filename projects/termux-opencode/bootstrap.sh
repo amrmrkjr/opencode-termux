@@ -168,9 +168,6 @@ else
     fi
     rm -rf "$BUN_TMP"
     trap - EXIT
-    # Fix shim path (make install puts it at ~/.bun/lib/, wrapper expects ~/.bun/bin/lib/)
-    mkdir -p "$BUN_DIR/bin/lib" 2>/dev/null
-    [ -f "$BUN_SHIM" ] && ln -sf "$BUN_SHIM" "$BUN_DIR/bin/lib/bun-shim.so" 2>/dev/null || true
   fi
 
   # Step 2: Download official bun binary (pinned release, checksum-verified)
@@ -200,8 +197,16 @@ else
     fi
   fi
 
-  # Step 3: Create launchers
+  # Step 3: (Re)create launchers — idempotent, runs every bootstrap
+  # so partial installs self-heal: shim symlink + launcher routing.
+  # - Wrapper path: `bun-termux` needs bun-shim.so at ~/.bun/bin/lib/
+  #   (make install puts it at ~/.bun/lib/) — relinked on every run.
+  # - Launchers must route through the wrapper when it exists; the raw
+  #   `buno` binary alone fails with "version `LIBC' not found" via the
+  #   termux-exec preload, breaking `bunx skills`/plugins.
   if [ -x "$BUN_WRAPPER" ]; then
+    mkdir -p "$BUN_DIR/bin/lib" 2>/dev/null
+    [ -f "$BUN_SHIM" ] && ln -sf "$BUN_SHIM" "$BUN_DIR/bin/lib/bun-shim.so" 2>/dev/null || true
     cat > "$BUN_LAUNCHER" << 'BUN_LAUNCHER'
 #!/data/data/com.termux/files/usr/bin/sh
 exec ~/.bun/bin/bun-termux "$@"
@@ -238,6 +243,30 @@ BUNX_LAUNCHER
     ok "Bun installed (shell wrapper fallback)"
   else
     warn "Bun installation failed — plugins won't load automatically"
+  fi
+fi
+
+# ─── Bun launcher repair (heal stale installs, always runs) ─────────────────
+# The Step 3 launcher block above is skipped when the "already installed" early
+# exit fires. Re-point launchers at the wrapper if a wrapper now exists but the
+# launchers were written for the raw binary (pre-1.1.1 installs), and re-link
+# the shim where the wrapper expects it.
+if [ -x "$BUN_WRAPPER" ]; then
+  mkdir -p "$BUN_DIR/bin/lib" 2>/dev/null
+  [ -f "$BUN_SHIM" ] && ln -sf "$BUN_SHIM" "$BUN_DIR/bin/lib/bun-shim.so" 2>/dev/null || true
+  if ! head -1 "$BUN_LAUNCHER" 2>/dev/null | grep -q 'bun-termux'; then
+    cat > "$BUN_LAUNCHER" << 'BUN_LAUNCHER'
+#!/data/data/com.termux/files/usr/bin/sh
+exec ~/.bun/bin/bun-termux "$@"
+BUN_LAUNCHER
+    chmod 755 "$BUN_LAUNCHER"
+
+    cat > "$BUNX_LAUNCHER" << 'BUNX_LAUNCHER'
+#!/data/data/com.termux/files/usr/bin/sh
+exec ~/.bun/bin/bun-termux x "$@"
+BUNX_LAUNCHER
+    chmod 755 "$BUNX_LAUNCHER"
+    ok "Bun launchers repaired (wrapper)"
   fi
 fi
 
