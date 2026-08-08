@@ -118,7 +118,7 @@ fi
 # ─── Install basic deps ─────────────────────────────────────────────────────
 info "Installing dependencies…"
 
-DEPS=(curl jq tar ripgrep clang make)
+DEPS=(curl jq tar ripgrep clang make git)
 MISSING=()
 for d in "${DEPS[@]}"; do
   command -v "$d" >/dev/null 2>&1 || MISSING+=("$d")
@@ -158,11 +158,14 @@ else
     BUN_TMP="$(mktemp -d)"
     trap 'rm -rf "$BUN_TMP"' EXIT
     muted "Downloading bun-on-termux…"
-    git clone --depth 1 https://github.com/tribixbite/bun-on-termux.git "$BUN_TMP" 2>/dev/null || warn "Failed to clone bun-on-termux"
-    cd "$BUN_TMP"
-    muted "Building Bun wrapper…"
-    make install 2>/dev/null || warn "Failed to build bun-on-termux"
-    cd "$HOME_DIR"
+    if git clone --depth 1 https://github.com/tribixbite/bun-on-termux.git "$BUN_TMP" 2>/dev/null; then
+      cd "$BUN_TMP" || true
+      muted "Building Bun wrapper…"
+      make install 2>/dev/null || warn "Failed to build bun-on-termux"
+      cd "$HOME_DIR" || true
+    else
+      warn "Failed to clone bun-on-termux — skipping wrapper, using official binary only"
+    fi
     rm -rf "$BUN_TMP"
     trap - EXIT
     # Fix shim path (make install puts it at ~/.bun/lib/, wrapper expects ~/.bun/bin/lib/)
