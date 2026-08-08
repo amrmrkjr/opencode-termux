@@ -37,15 +37,14 @@ Termux's `termux-exec` package uses `LD_PRELOAD` to intercept filesystem calls a
 ~/.local/share/opencode-termux/
 ├── bin/
 │   └── opencode                 Patched ELF binary (glibc interpreter)
-├── completions/
-│   ├── opencode.bash            Bash completion script
-│   └── opencode.zsh             Zsh completion script
-├── launcher.sh                  -> $PREFIX/bin/opencode (symlink reference)
-└── bun/                         Bun runtime (if installed)
-    ├── bin/
-    │   └── bun                  Patched bun binary (glibc interpreter)
-    └── bin/
-        └── bunx                 Bun package runner (symlink)
+└── completions/
+    ├── opencode.bash            Bash completion script
+    └── opencode.zsh             Zsh completion script
+
+~/.bun/
+└── bin/
+    ├── bun-termux               Termux wrapper (preferred)
+    └── buno                     Official Bun binary (patchelf'd)
 ```
 
 System-level paths created:

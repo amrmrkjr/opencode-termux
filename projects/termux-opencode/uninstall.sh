@@ -128,6 +128,7 @@ case "$RESP" in
     # Normal removal first
     pkg remove -y glibc patchelf-glibc binutils-glibc glibc-repo 2>/dev/null || true
     # Force purge leftover glibc-* dependency packages (common after repeated install/uninstall)
+    warn "Force-purging leftover glibc-* packages…"
     dpkg --purge --force-all 2>/dev/null \
       glibc patchelf-glibc binutils-glibc glibc-repo \
       glibc-runner attr-glibc binutils-libs-glibc brotli-glibc gcc-libs-glibc \
@@ -142,8 +143,8 @@ case "$RESP" in
       linux-api-headers-glibc ca-certificates-glibc e2fsprogs-glibc gdbm-glibc \
       bash-completion-glibc libacl-glibc || true
     # Remove the glibc directory and any stale symlinks
-    rm -rf /data/data/com.termux/files/usr/glibc
-    rm -f /data/data/com.termux/files/usr/include/asm
+    rm -rf "$PREFIX/glibc"
+    rm -f "$PREFIX/include/asm"
     ok "glibc packages removed"
     ;;
   *)

@@ -59,14 +59,14 @@ ok "${AVAIL}MB free (estimated)"
 # ─── Install glibc + patchelf ───────────────────────────────────────────────
 info "Installing glibc compatibility layer…"
 
-pkg update -y 2>/dev/null || true
+pkg update -y || warn "pkg update failed — continuing"
 
 # Check if glibc is already fully installed
 if [ -x "$GLD" ] && [ -x "$PE" ]; then
   ok "glibc + patchelf already installed"
 else
   pkg install -y glibc-repo 2>/dev/null || err "Failed to install glibc-repo"
-  pkg update -y 2>/dev/null || true
+  pkg update -y || warn "pkg update failed — continuing"
   pkg install -y glibc patchelf-glibc binutils-glibc 2>/dev/null || \
     err "Failed to install glibc packages"
   [ -x "$GLD" ] || err "glibc loader not found at $GLD"
@@ -139,6 +139,8 @@ else
   fi
 
   # Step 2: Download official bun binary
+  # Stored internally as `buno` — keeps the raw oven-sh binary distinct from the
+  # Termux wrapper (`bun-termux`) and the user-facing `bun` launcher.
   if [ ! -x "$BUN_BIN" ]; then
     muted "Downloading official Bun binary…"
     BUN_ZIP="$(mktemp).zip"
@@ -151,8 +153,11 @@ else
         install -m755 "$OC_BUN" "$BUN_BIN"
         # Patchelf the bun binary (same as opencode — glibc interpreter)
         unset LD_PRELOAD
-        "$PE" --set-interpreter "$GLD" "$BUN_BIN" 2>/dev/null || true
-        ok "Bun binary patchelf'd"
+        if ! "$PE" --set-interpreter "$GLD" "$BUN_BIN" 2>/dev/null; then
+          warn "Failed to patchelf Bun binary"
+        else
+          ok "Bun binary patchelf'd"
+        fi
       fi
       rm -rf "$HOME_DIR/.bun-tmp" "$BUN_ZIP"
     fi
@@ -254,7 +259,7 @@ fi
 info "Patching binary interpreter…"
 
 # termux-exec preload breaks glibc binaries — unset it
-export LD_PRELOAD=""
+unset LD_PRELOAD
 
 CURRENT_INTERP="$("$PE" --print-interpreter "$BIN" 2>/dev/null || echo "")"
 if [ "$CURRENT_INTERP" != "$GLD" ]; then
@@ -296,7 +301,9 @@ unset LD_PRELOAD
 if [ -x "$PE" ]; then
   CURRENT_INTERP="$("$PE" --print-interpreter "$BIN" 2>/dev/null || echo "")"
   if [ "$CURRENT_INTERP" != "$GLD" ]; then
-    "$PE" --set-interpreter "$GLD" "$BIN" 2>/dev/null || true
+    if ! "$PE" --set-interpreter "$GLD" "$BIN"; then
+      echo "opencode: warning: failed to re-apply patchelf — re-run bootstrap" >&2
+    fi
   fi
 fi
 
@@ -416,7 +423,7 @@ unset LD_PRELOAD
 
 # Re-apply patchelf
 if [ -x "$PE" ]; then
-  "$PE" --set-interpreter "$GLD" "$BIN" 2>/dev/null || true
+  "$PE" --set-interpreter "$GLD" "$BIN" || err "patchelf failed"
 fi
 
 NEW="$("$BIN" --version 2>/dev/null | head -1 || echo "installed")"
