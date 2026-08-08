@@ -42,13 +42,16 @@ That's it. The bootstrap installs everything you need — glibc compatibility la
 
 Releases are **pinned** (no "latest" chasing) and every downloaded binary is **SHA-256 verified** before install; a checksum mismatch aborts the install.
 
+Currently pinned: **OpenCode v1.18.15** and **Bun bun-v1.3.14**. The OpenCode digest comes from the GitHub release asset API (the release ships no `SHA256SUMS` file); the Bun digest comes from Bun's official `SHASUMS256.txt`. To bump either, edit `OPENCODE_VERSION`/`OPENCODE_SHA256` and `BUN_VERSION`/`BUN_SHA256` at the top of `bootstrap.sh`, then re-run the bootstrap.
+
 After install, these commands are available:
 
 ```
-opencode               Terminal UI
-opencode web           Web interface
-opencode-termux-update Install the pinned release (never run `opencode update`)
-opencode providers     Add API keys
+opencode                Terminal UI
+opencode web            Web interface
+opencode-termux-update  Install the pinned release (never run `opencode update`)
+opencode providers      Add API keys
+bunx                    Run OpenCode plugins/personas via Bun
 ```
 
 > **Update safely:** Run `opencode-termux-update` instead of `opencode update`. It installs the exact pinned release, verified against its pinned SHA-256, and preserves the launcher. The built-in `opencode update` restores the original ELF interpreter and breaks the Termux wrapper.
@@ -57,9 +60,9 @@ opencode providers     Add API keys
 
 ## How It Works
 
-OpenCode ships a glibc-linked binary for linux-arm64, but Termux uses Android's bionic libc. Three mechanisms bridge the gap:
+OpenCode ships a glibc-linked binary for linux-arm64, but Termux uses Android's bionic libc. Four mechanisms bridge the gap:
 
-**1. glibc compatibility layer** — Termux packages provide `glibc`, `patchelf-glibc`, and `binutils-glibc` from its official repository, installed under `$PREFIX/glibc/`. This gives OpenCode the standard glibc ABI it needs.
+**1. glibc compatibility layer** — the bootstrap installs `glibc-repo`, `glibc`, `patchelf-glibc`, and `binutils-glibc` from Termux's official repository, installed under `$PREFIX/glibc/`. This gives OpenCode the standard glibc ABI it needs.
 
 **2. Patchelf** — the bootstrap rewrites the binary's ELF interpreter (`/lib/ld-linux-aarch64.so.1`) to Termux's glibc loader (`$PREFIX/glibc/lib/ld-linux-aarch64.so.1`). One header edit, no recompilation.
 
@@ -67,13 +70,16 @@ OpenCode ships a glibc-linked binary for linux-arm64, but Termux uses Android's 
 
 Termux's `termux-exec` package uses `LD_PRELOAD` to intercept filesystem calls. This breaks glibc binaries. The launcher unsets `LD_PRELOAD` before invoking the binary, ensuring clean dynamic linking.
 
+**4. Bun, handled the same way** — Bun is installed as a patchelf'd official binary stored as `buno`, launched through a C wrapper (`bun-termux`) built from `bun-on-termux`, or a shell wrapper fallback. The bootstrap re-links the wrapper shim and re-points the `bun`/`bunx` launchers at the wrapper on **every** run (idempotent), so stale or partial installs self-heal.
+
 ---
 
 ## Requirements
 
 - **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/) — the Play Store version is outdated and won't work
-- **ARM64** (aarch64) device
-- **~500 MB** free space
+- **ARM64** (aarch64) device (enforced by the bootstrap)
+- **Android 11+** recommended
+- **~500 MB** free space (checked by the bootstrap)
 - **Internet** on first run
 
 ---
@@ -113,7 +119,7 @@ OpenCode ships a glibc-linked binary, but Termux uses Android's bionic libc. The
 No. It restores the original ELF interpreter, which breaks the Termux wrapper. Use `opencode-termux-update`, which installs the pinned release after verifying its SHA-256.
 
 **How do I upgrade OpenCode?**
-Releases are pinned in `projects/termux-opencode/bootstrap.sh`. To bump: edit `OPENCODE_VERSION` and `OPENCODE_SHA256` at the top of that file (matching a real release tag and its asset sha256), then re-run the bootstrap. The update script it generates will then install that pinned version.
+Releases are pinned in `projects/termux-opencode/bootstrap.sh`. To bump: edit `OPENCODE_VERSION`, `OPENCODE_SHA256` (and `BUN_VERSION`, `BUN_SHA256` for Bun) at the top of that file (matching a real release tag and its asset sha256), then re-run the bootstrap. The update script it generates will then install that pinned version.
 
 **Does this work on any Android device?**
 ARM64 only, Android 11+ recommended. Install Termux from F-Droid, not the Play Store.
@@ -132,7 +138,7 @@ No root needed. Everything runs in Termux's standard userspace.
 bash projects/termux-opencode/uninstall.sh
 ```
 
-Removes the OpenCode binary, launcher, update script, and optionally the workspace and glibc packages.
+Removes the OpenCode binary, launcher, update script, Bun and its launchers, and completions. It also prompts to purge the glibc package stack. The optional workspace prompt only appears if `~/opencode` exists — the bootstrap no longer creates one.
 
 ---
 
@@ -142,10 +148,13 @@ Removes the OpenCode binary, launcher, update script, and optionally the workspa
 Restart the Termux session or run `source ~/.bashrc` to reload your PATH.
 
 **glibc error on launch**
-Run `opencode-termux-update` to re-patch the binary.
+Run `opencode-termux-update` to re-install the pinned release and re-apply patchelf.
 
-**Bun won't compile**
-The bootstrap falls back to a shell wrapper automatically. No action needed.
+**Bun/bunx fail or plugins won't load**
+Re-run the bootstrap. Its Bun-launcher repair pass re-links the shim and re-points `bun`/`bunx` at the wrapper on every run, so stale installs self-heal. A git clone failure (needed to build the `bun-termux` wrapper) falls back to the official binary with shell wrappers automatically.
+
+**LD_PRELOAD errors after an update**
+The launcher and update script unset `LD_PRELOAD` themselves (termux-exec's preload breaks glibc binaries). If a raw `buno` invocation fails with a linker error, use `bun`/`bunx` (the launchers) instead of calling `~/.bun/bin/buno` directly.
 
 ---
 

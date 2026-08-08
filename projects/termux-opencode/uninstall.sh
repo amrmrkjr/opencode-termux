@@ -5,7 +5,8 @@
 #   - OpenCode binary and data
 #   - Launcher and update script
 #   - glibc packages (optional)
-#   - Workspace directory (optional)
+#   - Workspace directory (optional — only offered if ~/opencode exists;
+#     the bootstrap no longer creates one)
 #
 set -euo pipefail
 
