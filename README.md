@@ -86,9 +86,6 @@ The bootstrap creates the following structure:
 ├── completions/                  Shell completions (bash/zsh/fish)
 ├── launcher.sh                   Wrapper script entry point
 └── bun/                          Bun runtime (plugin system)
-
-~/opencode/                       Default workspace
-└── opencode.json                 Workspace config
 ```
 
 System-level paths:
@@ -138,9 +135,6 @@ Restart the Termux session or run `source ~/.bashrc` to reload your PATH.
 
 **glibc error on launch**
 Run `opencode-termux-update` to re-patch the binary.
-
-**Configuration error / unrecognized keys**
-Check `~/opencode/opencode.json` for invalid keys and remove them.
 
 **Bun won't compile**
 The bootstrap falls back to a shell wrapper automatically. No action needed.

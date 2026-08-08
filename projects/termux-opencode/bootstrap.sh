@@ -36,7 +36,6 @@ BIN_DIR="$HOME_DIR/.local/share/opencode-termux/bin"
 BIN="$BIN_DIR/opencode"
 LAUNCHER="$PREFIX/bin/opencode"
 REPO="anomalyco/opencode"
-WORKSPACE="$HOME_DIR/opencode"
 
 # ─── Sanity checks ──────────────────────────────────────────────────────────
 info "Checking environment…"
@@ -433,29 +432,6 @@ UPDATE_SCRIPT
 chmod 755 "$UPDATE_SCRIPT"
 ok "update script created ($UPDATE_SCRIPT)"
 
-# ─── Create workspace ───────────────────────────────────────────────────────
-if [ ! -d "$WORKSPACE" ]; then
-  info "Creating workspace at $WORKSPACE…"
-  mkdir -p "$WORKSPACE"
-  cat > "$WORKSPACE/opencode.json" << 'WORKSPACE_CONFIG'
-{
-  "$schema": "https://opencode.ai/config.json",
-  "terminal": {
-    "compact": true,
-    "maxTokensPerRequest": 4096,
-    "autoApprove": false
-  },
-  "web": {
-    "port": 3000,
-    "host": "127.0.0.1"
-  }
-}
-WORKSPACE_CONFIG
-  ok "workspace created"
-else
-  ok "workspace already exists"
-fi
-
 # ─── Summary ────────────────────────────────────────────────────────────────
 echo ""
 info "${BOLD}Install complete${NC}"
@@ -466,7 +442,6 @@ echo ""
   printf "  ${GREEN}Node.js:${NC}    %s\n" "$NODE_V"
   BUN_V="$("$PREFIX/bin/bun" --version 2>/dev/null || echo 'not installed')"
   printf "  ${GREEN}Bun:${NC}        %s\n" "$BUN_V"
-  printf "  ${GREEN}Workspace:${NC}  %s\n" "$WORKSPACE"
   printf "  ${GREEN}Update:${NC}     %s\n" "$UPDATE_SCRIPT"
   echo ""
   info "${BOLD}Usage${NC}"

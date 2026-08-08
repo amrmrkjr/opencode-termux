@@ -18,7 +18,6 @@ bash projects/termux-opencode/bootstrap.sh
 4. **Creates launcher** — `$PREFIX/bin/opencode` with self-healing patchelf (re-applies after self-update)
 5. **Creates update script** — `$PREFIX/bin/opencode-termux-update` for safe binary updates
 6. **Configures DNS** — writes `nsswitch.conf` for glibc's NSS resolver
-7. **Creates workspace** — `~/opencode/` with Termux-optimized config
 
 ## How it works
 
@@ -82,27 +81,6 @@ The bootstrap does not export environment variables globally. Instead, the launc
 |----------|-------|---------|
 | `BUN_INSTALL` | `$HOME/.bun` | Bun runtime root |
 | `TMPDIR` | `$HOME/.bun/tmp` | Temporary directory for Bun operations |
-
-## Configuration
-
-The bootstrap creates a workspace directory at `~/opencode/` with a minimal, Termux-optimized `opencode.json`:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "terminal": {
-    "compact": true,
-    "maxTokensPerRequest": 4096,
-    "autoApprove": false
-  },
-  "web": {
-    "port": 3000,
-    "host": "127.0.0.1"
-  }
-}
-```
-
-> **Note:** If you see a "Configuration is invalid / Unrecognized keys" error, remove the `terminal` and `web` keys — newer OpenCode versions have dropped them. The config will still work with just the `$schema` field.
 
 ## Commands (after install)
 
