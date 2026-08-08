@@ -106,7 +106,7 @@ fi
 if [ -d "$WORKSPACE" ]; then
   echo ""
   printf '%s' "${DIM}  Remove workspace at ${BOLD}$WORKSPACE${DIM}? [y/N] ${NC}"
-  read -r RESP
+  read -r RESP || RESP=""
   case "$RESP" in
     y|Y|yes|YES)
       rm -rf "$WORKSPACE"
@@ -121,8 +121,8 @@ fi
 # ─── Step 7: Optionally remove glibc packages ───────────────────────────────
 echo ""
 printf '%s' "${DIM}  Remove glibc packages (glibc, patchelf-glibc, binutils-glibc)? [y/N] ${NC}"
-read -r RESP
-case "$RESP" in
+  read -r RESP || RESP=""
+  case "$RESP" in
   y|Y|yes|YES)
     info "Removing glibc packages…"
     # Normal removal first
