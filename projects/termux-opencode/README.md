@@ -13,11 +13,22 @@ bash projects/termux-opencode/bootstrap.sh
 ## What it does
 
 1. **glibc compatibility layer** — installs `glibc-repo`, `glibc`, `patchelf-glibc`, `binutils-glibc`
-2. **Downloads official OpenCode binary** — the `opencode-linux-arm64.tar.gz` from GitHub releases
+2. **Downloads the pinned official OpenCode binary** — the `opencode-linux-arm64.tar.gz` tarball for the exact release tag in `bootstrap.sh`, SHA-256 verified before extraction (mismatch aborts the install)
 3. **Patchelf's the interpreter** — sets the binary's dynamic linker to Termux's glibc loader (`$PREFIX/glibc/lib/ld-linux-aarch64.so.1`)
 4. **Creates launcher** — `$PREFIX/bin/opencode` with self-healing patchelf (re-applies after self-update)
-5. **Creates update script** — `$PREFIX/bin/opencode-termux-update` for safe binary updates
+5. **Creates update script** — `$PREFIX/bin/opencode-termux-update` installs the pinned release after verifying its SHA-256
 6. **Configures DNS** — writes `nsswitch.conf` for glibc's NSS resolver
+
+## Version pinning & checksums
+
+OpenCode and Bun are **pinned to exact release tags** — the bootstrap never chases "latest". Each download is verified against its pinned SHA-256 before anything is extracted or installed; a mismatch aborts with an error.
+
+| Component | Pinned value | Source of the hash |
+|-----------|-------------|--------------------|
+| OpenCode | `OPENCODE_VERSION` / `OPENCODE_SHA256` | GitHub API asset digest for the pinned tag (no SHA256SUMS asset is shipped) |
+| Bun | `BUN_VERSION` / `BUN_SHA256` | Official `SHASUMS256.txt` shipped in the pinned Bun release |
+
+To bump to a newer release: edit `OPENCODE_VERSION`/`OPENCODE_SHA256` (and `BUN_VERSION`/`BUN_SHA256` for Bun) at the top of `bootstrap.sh` using that release's real tag and asset sha256, then re-run bootstrap. The generated `opencode-termux-update` continues to install whatever is pinned.
 
 ## How it works
 
@@ -87,10 +98,10 @@ The bootstrap does not export environment variables globally. Instead, the launc
 |---------|-------------|
 | `opencode` | Terminal UI |
 | `opencode web` | Web interface |
-| `opencode-termux-update` | Safe binary update (preserves launcher) |
+| `opencode-termux-update` | Install the pinned release (SHA-256 verified, preserves launcher) |
 | `opencode providers` | Add API keys |
 
-Never run `opencode update` directly — it restores the original interpreter and breaks the wrapper. Use `opencode-termux-update` instead.
+Never run `opencode update` directly — it restores the original interpreter and breaks the wrapper. Use `opencode-termux-update`, which installs the exact pinned version after verifying its SHA-256. To bump the pinned version, edit `OPENCODE_VERSION`/`OPENCODE_SHA256` at the top of `bootstrap.sh` and re-run bootstrap.
 
 ## Uninstall
 

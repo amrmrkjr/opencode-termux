@@ -40,16 +40,18 @@ bash projects/termux-opencode/bootstrap.sh
 
 That's it. The bootstrap installs everything you need — glibc compatibility layer, the OpenCode binary, plus Bun for plugin support.
 
+Releases are **pinned** (no "latest" chasing) and every downloaded binary is **SHA-256 verified** before install; a checksum mismatch aborts the install.
+
 After install, these commands are available:
 
 ```
 opencode               Terminal UI
 opencode web           Web interface
-opencode-termux-update Safe update (never run `opencode update`)
+opencode-termux-update Install the pinned release (never run `opencode update`)
 opencode providers     Add API keys
 ```
 
-> **Update safely:** Run `opencode-termux-update` instead of `opencode update`. The built-in update restores the original ELF interpreter and breaks the Termux wrapper.
+> **Update safely:** Run `opencode-termux-update` instead of `opencode update`. It installs the exact pinned release, verified against its pinned SHA-256, and preserves the launcher. The built-in `opencode update` restores the original ELF interpreter and breaks the Termux wrapper.
 
 ---
 
@@ -108,7 +110,10 @@ System-level paths:
 OpenCode ships a glibc-linked binary, but Termux uses Android's bionic libc. The glibc compatibility layer bridges this mismatch.
 
 **Can I use `opencode update`?**
-No. It restores the original ELF interpreter, which breaks the Termux wrapper. Use `opencode-termux-update`.
+No. It restores the original ELF interpreter, which breaks the Termux wrapper. Use `opencode-termux-update`, which installs the pinned release after verifying its SHA-256.
+
+**How do I upgrade OpenCode?**
+Releases are pinned in `projects/termux-opencode/bootstrap.sh`. To bump: edit `OPENCODE_VERSION` and `OPENCODE_SHA256` at the top of that file (matching a real release tag and its asset sha256), then re-run the bootstrap. The update script it generates will then install that pinned version.
 
 **Does this work on any Android device?**
 ARM64 only, Android 11+ recommended. Install Termux from F-Droid, not the Play Store.

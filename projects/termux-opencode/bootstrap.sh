@@ -4,9 +4,15 @@
 # OpenCode ships a glibc-linked Bun binary for linux-arm64. On Termux it won't
 # run directly (missing /lib/ld-linux-aarch64.so.1). This script:
 #   1. Installs Termux's glibc runtime + patchelf
-#   2. Downloads the official OpenCode linux-arm64 binary
-#   3. Patchelf's its interpreter to Termux's glibc loader
-#   4. Creates a self-healing launcher at $PREFIX/bin/opencode
+#   2. Downloads the pinned official OpenCode linux-arm64 binary
+#   3. Verifies every downloaded binary against its pinned SHA-256 checksum
+#      before install (mismatch = abort, never installs)
+#   4. Patchelf's its interpreter to Termux's glibc loader
+#   5. Creates a self-healing launcher at $PREFIX/bin/opencode
+#
+# Versions are pinned below — no "latest" chasing. To bump to a newer
+# release, edit OPENCODE_VERSION/OPENCODE_SHA256 (and BUN_VERSION/BUN_SHA256)
+# at the top of this file, then re-run bootstrap.
 #
 # No root, no proot, no containers. Just a thin compatibility layer.
 #
@@ -25,6 +31,32 @@ ok()    { printf "${GREEN}  ✓${NC} %s\n" "$*"; }
 err()   { printf "${RED}  ✗${NC} %s\n" "$*" >&2; exit 1; }
 muted() { printf "${DIM}  %s${NC}\n" "$*"; }
 warn()  { printf "${YELLOW}  ⚠${NC} %s\n" "$*"; }
+
+# abort with err unless the file's real SHA-256 matches the pinned one
+verify_sha256() {
+  local file="$1" expected="$2" label="$3" actual
+  actual="$(sha256sum "$file" | awk '{print $1}')"
+  if [ "$actual" != "$expected" ]; then
+    err "SHA-256 mismatch for $label: expected $expected, got $actual — aborting (tampered download or stale pin)"
+  fi
+  ok "SHA-256 verified: $label"
+}
+
+# ─── Pinned releases (edit these to bump versions) ──────────────────────────
+# Every download is verified against the pinned SHA-256 below before install.
+# Release sha256sums:
+#   OpenCode v1.18.15, asset opencode-linux-arm64.tar.gz — from the GitHub
+#     release asset digest (the release ships no SHA256SUMS file; the digest
+#     is the API's sha256 of the uploaded file). Reviewed here on 2026-08-08.
+#   Bun bun-v1.3.14, asset bun-linux-aarch64.zip — from the official
+#     SHASUMS256.txt shipped in that release. Verified here on 2026-08-08.
+#
+# To bump: set both the tag and the matching sha256, then re-run bootstrap.
+# `opencode-termux-update` installs exactly these pinned versions.
+OPENCODE_VERSION="v1.18.15"
+OPENCODE_SHA256="500611819ff88916b185649990505a9be76ad13ca5bb4b9323e5abdd39b1c6fb"
+BUN_VERSION="bun-v1.3.14"
+BUN_SHA256="a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b"
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
@@ -138,15 +170,17 @@ else
     [ -f "$BUN_SHIM" ] && ln -sf "$BUN_SHIM" "$BUN_DIR/bin/lib/bun-shim.so" 2>/dev/null || true
   fi
 
-  # Step 2: Download official bun binary
+  # Step 2: Download official bun binary (pinned release, checksum-verified)
   # Stored internally as `buno` — keeps the raw oven-sh binary distinct from the
   # Termux wrapper (`bun-termux`) and the user-facing `bun` launcher.
   if [ ! -x "$BUN_BIN" ]; then
-    muted "Downloading official Bun binary…"
+    muted "Downloading official Bun binary ($BUN_VERSION)…"
     BUN_ZIP="$(mktemp).zip"
-    curl -fsSL "https://github.com/oven-sh/bun/releases/latest/download/bun-linux-aarch64.zip" -o "$BUN_ZIP" 2>/dev/null || \
-      { warn "Failed to download bun"; rm -f "$BUN_ZIP"; }
-    if [ -f "$BUN_ZIP" ]; then
+    if ! curl -fsSL "https://github.com/oven-sh/bun/releases/download/$BUN_VERSION/bun-linux-aarch64.zip" -o "$BUN_ZIP" 2>/dev/null; then
+      warn "Failed to download bun"
+      rm -f "$BUN_ZIP"
+    elif [ -f "$BUN_ZIP" ]; then
+      verify_sha256 "$BUN_ZIP" "$BUN_SHA256" "Bun $BUN_VERSION"
       unzip -o "$BUN_ZIP" -d "$HOME_DIR/.bun-tmp" 2>/dev/null || true
       OC_BUN="$(find "$HOME_DIR/.bun-tmp" -name 'bun' -type f 2>/dev/null | head -1)"
       if [ -n "$OC_BUN" ]; then
@@ -229,7 +263,7 @@ mkdir -p "$BIN_DIR"
 
 if [ -x "$BIN" ] && [ "$("$PE" --print-interpreter "$BIN" 2>/dev/null)" = "$GLD" ]; then
   ok "OpenCode already installed (patchelf'd for glibc)"
-  info "Run 'opencode-termux-update' to check for updates"
+  info "Run 'opencode-termux-update' to reinstall the pinned release if needed"
   info "Skipping download…"
 else
   if [ -x "$BIN" ]; then
@@ -238,9 +272,11 @@ else
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
 
-  URL="https://github.com/$REPO/releases/latest/download/opencode-linux-arm64.tar.gz"
-  muted "Downloading from GitHub releases…"
+  URL="https://github.com/$REPO/releases/download/$OPENCODE_VERSION/opencode-linux-arm64.tar.gz"
+  muted "Downloading $OPENCODE_VERSION from GitHub releases…"
   curl -fsSL "$URL" -o "$TMP/opencode.tar.gz" || err "Download failed"
+
+  verify_sha256 "$TMP/opencode.tar.gz" "$OPENCODE_SHA256" "OpenCode $OPENCODE_VERSION"
 
   muted "Extracting…"
   tar xzf "$TMP/opencode.tar.gz" -C "$TMP" || err "Extraction failed"
@@ -368,13 +404,18 @@ info "Creating update script…"
 UPDATE_SCRIPT="$PREFIX/bin/opencode-termux-update"
 cat > "$UPDATE_SCRIPT" << 'UPDATE_SCRIPT'
 #!/data/data/com.termux/files/usr/bin/sh
-# opencode-termux-update — Safely update OpenCode binary
+# opencode-termux-update — Install the pinned OpenCode release
 #
-# Downloads the latest linux-arm64 binary and re-applies patchelf.
+# Downloads the exact pinned release (not "latest") and re-applies patchelf.
+# The download is verified against the pinned SHA-256 before install.
 # Never run `opencode update` directly — it restores the original
 # interpreter and breaks the Termux wrapper.
 #
 set -eu
+
+OPENCODE_VERSION="@@OPENCODE_VERSION@@"
+OPENCODE_SHA256="@@OPENCODE_SHA256@@"
+BUN_VERSION="@@BUN_VERSION@@"
 
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 HOME_DIR="${HOME:-/data/data/com.termux/files/home}"
@@ -400,14 +441,21 @@ if [ -x "$BIN" ]; then
 fi
 
 info "Current version: $CURRENT"
-info "Checking for updates…"
+info "Installing pinned release: $OPENCODE_VERSION"
 
 TMP="$(mktemp -d)"
-trap "rm -rf '$TMP'" EXIT
+trap 'rm -rf "$TMP"' EXIT
 
-URL="https://github.com/$REPO/releases/latest/download/opencode-linux-arm64.tar.gz"
+URL="https://github.com/$REPO/releases/download/$OPENCODE_VERSION/opencode-linux-arm64.tar.gz"
 muted "Downloading…"
 curl -fsSL "$URL" -o "$TMP/opencode.tar.gz" || err "Download failed"
+
+# Verify the pinned sha256 before extracting/installing anything
+ACTUAL="$(sha256sum "$TMP/opencode.tar.gz" | awk '{print $1}')"
+if [ "$ACTUAL" != "$OPENCODE_SHA256" ]; then
+  err "SHA-256 mismatch for $OPENCODE_VERSION: expected $OPENCODE_SHA256, got $ACTUAL — aborting (tampered download or stale pin)"
+fi
+muted "SHA-256 verified"
 
 tar xzf "$TMP/opencode.tar.gz" -C "$TMP" || err "Extraction failed"
 OC="$(find "$TMP" -maxdepth 2 -type f -name 'opencode' | head -1)"
@@ -427,14 +475,20 @@ if [ -x "$PE" ]; then
 fi
 
 NEW="$("$BIN" --version 2>/dev/null | head -1 || echo "installed")"
-info "Updated to: $NEW"
+info "Updated to pinned release: $NEW"
+muted "To bump the pinned version, edit OPENCODE_VERSION and OPENCODE_SHA256"
+muted "at the top of bootstrap.sh, then re-run bootstrap."
 
 # ─── Note about Bun ─────────────────────────────────────────────────────────
 BUN_BIN="$HOME_DIR/.bun/bin/buno"
 if [ -x "$BUN_BIN" ]; then
-  muted "Bun is installed — re-run bootstrap for Bun updates"
+  muted "Bun $BUN_VERSION is pinned too — to bump it, edit BUN_VERSION and"
+  muted "BUN_SHA256 at the top of bootstrap.sh, then re-run bootstrap."
 fi
 UPDATE_SCRIPT
+
+# Inject the pinned config values (heredoc above is quoted on purpose)
+sed -i "s|@@OPENCODE_VERSION@@|$OPENCODE_VERSION|g; s|@@OPENCODE_SHA256@@|$OPENCODE_SHA256|g; s|@@BUN_VERSION@@|$BUN_VERSION|g" "$UPDATE_SCRIPT"
 
 chmod 755 "$UPDATE_SCRIPT"
 ok "update script created ($UPDATE_SCRIPT)"
