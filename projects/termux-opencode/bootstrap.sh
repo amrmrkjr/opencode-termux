@@ -430,7 +430,7 @@ NEW="$("$BIN" --version 2>/dev/null | head -1 || echo "installed")"
 info "Updated to: $NEW"
 
 # ─── Note about Bun ─────────────────────────────────────────────────────────
-BUN_BIN="$HOME_DIR/.local/share/opencode-termux/bun/bin/bun"
+BUN_BIN="$HOME_DIR/.bun/bin/buno"
 if [ -x "$BUN_BIN" ]; then
   muted "Bun is installed — re-run bootstrap for Bun updates"
 fi
