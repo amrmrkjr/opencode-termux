@@ -1,4 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
+
 # bootstrap.sh — Install OpenCode natively on Termux (aarch64)
 #
 # OpenCode ships a glibc-linked Bun binary for linux-arm64. On Termux it won't
@@ -53,8 +54,8 @@ verify_sha256() {
 #
 # To bump: set both the tag and the matching sha256, then re-run bootstrap.
 # `opencode-termux-update` installs exactly these pinned versions.
-OPENCODE_VERSION="v1.18.15"
-OPENCODE_SHA256="500611819ff88916b185649990505a9be76ad13ca5bb4b9323e5abdd39b1c6fb"
+OPENCODE_VERSION="v1.18.32"
+OPENCODE_SHA256="568461b7d4d8c19865c97e9a1102e613049c6039d01fe772154de873c1865840"
 BUN_VERSION="bun-v1.3.14"
 BUN_SHA256="a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b"
 
@@ -295,7 +296,7 @@ mkdir -p "$BIN_DIR"
 
 if [ -x "$BIN" ] && [ "$("$PE" --print-interpreter "$BIN" 2>/dev/null)" = "$GLD" ]; then
   ok "OpenCode already installed (patchelf'd for glibc)"
-  info "Run 'opencode-termux-update' to reinstall the pinned release if needed"
+  info "Run 'opencode-termux-update' to install the latest release if needed"
   info "Skipping download…"
 else
   if [ -x "$BIN" ]; then
@@ -430,37 +431,17 @@ if command -v fish >/dev/null 2>&1; then
   ok "fish completions ready"
 fi
 
-# ─── Create workspace ────────────────────────────────────────────────────────
-# A dedicated project directory for OpenCode sessions. No opencode.json is
-# generated (deprecated terminal/web keys broke newer OpenCode) — OpenCode
-# writes its own config on first run.
-info "Creating workspace…"
-
-WORKSPACE="$HOME_DIR/opencode"
-mkdir -p "$WORKSPACE"
-ok "workspace created: $WORKSPACE"
-
-# Make new shell sessions start inside the workspace. Guarded by a marker
-# comment so uninstall.sh can strip it.
-for rc in ".bashrc" ".zshrc"; do
-  RC_FILE="$HOME_DIR/$rc"
-  [ -f "$RC_FILE" ] || touch "$RC_FILE"
-  if ! grep -q 'OpenCode termux workspace' "$RC_FILE" 2>/dev/null; then
-    printf '\n# OpenCode termux workspace\n[ -d "%s" ] && cd "%s"\n' "$WORKSPACE" "$WORKSPACE" >> "$RC_FILE"
-    ok "new sessions start in the workspace ($rc)"
-  fi
-done
-
 # ─── Create update script ───────────────────────────────────────────────────
 info "Creating update script…"
 
 UPDATE_SCRIPT="$PREFIX/bin/opencode-termux-update"
 cat > "$UPDATE_SCRIPT" << 'UPDATE_SCRIPT'
 #!/data/data/com.termux/files/usr/bin/sh
-# opencode-termux-update — Install the pinned OpenCode release
+# opencode-termux-update — Install the latest OpenCode release
 #
-# Downloads the exact pinned release (not "latest") and re-applies patchelf.
-# The download is verified against the pinned SHA-256 before install.
+# Resolves the newest tagged release from GitHub, downloads its linux-arm64
+# asset, verifies it against the SHA-256 digest GitHub publishes for the
+# asset, and re-applies patchelf. Pre-releases are never picked up.
 # Never run `opencode update` directly — it restores the original
 # interpreter and breaks the Termux wrapper.
 #
@@ -469,10 +450,6 @@ set -eu
 # termux-exec preload breaks glibc binaries — unset it before the very
 # first binary invocation (version detection included)
 unset LD_PRELOAD
-
-OPENCODE_VERSION="@@OPENCODE_VERSION@@"
-OPENCODE_SHA256="@@OPENCODE_SHA256@@"
-BUN_VERSION="@@BUN_VERSION@@"
 
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 HOME_DIR="${HOME:-/data/data/com.termux/files/home}"
@@ -498,21 +475,36 @@ if [ -x "$BIN" ]; then
 fi
 
 info "Current version: $CURRENT"
-info "Installing pinned release: $OPENCODE_VERSION"
+
+command -v jq >/dev/null 2>&1 || err "jq is required — re-run bootstrap.sh to install it"
+
+# Resolve the latest release from the GitHub API (skips pre-releases)
+muted "Querying GitHub API for the latest release…"
+API="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" || err "Failed to query GitHub API")"
+TAG="$(printf '%s' "$API" | jq -r '.tag_name' || true)"
+[ -n "$TAG" ] && [ "$TAG" != "null" ] || err "No latest release found for $REPO"
+info "Latest release: $TAG"
+
+ASSET="$(printf '%s' "$API" | jq -c '[.assets[] | select(.name == "opencode-linux-arm64.tar.gz")][0]')"
+[ -n "$ASSET" ] && [ "$ASSET" != "null" ] || err "Asset opencode-linux-arm64.tar.gz not found in $TAG"
+URL="$(printf '%s' "$ASSET" | jq -r '.browser_download_url')"
+DIGEST="$(printf '%s' "$ASSET" | jq -r '.digest // empty')"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-URL="https://github.com/$REPO/releases/download/$OPENCODE_VERSION/opencode-linux-arm64.tar.gz"
-muted "Downloading…"
+muted "Downloading $TAG…"
 curl -fsSL "$URL" -o "$TMP/opencode.tar.gz" || err "Download failed"
 
-# Verify the pinned sha256 before extracting/installing anything
+# Verify the asset against the SHA-256 digest GitHub publishes for it
 ACTUAL="$(sha256sum "$TMP/opencode.tar.gz" | awk '{print $1}')"
-if [ "$ACTUAL" != "$OPENCODE_SHA256" ]; then
-  err "SHA-256 mismatch for $OPENCODE_VERSION: expected $OPENCODE_SHA256, got $ACTUAL — aborting (tampered download or stale pin)"
+if [ -n "$DIGEST" ]; then
+  EXPECTED="${DIGEST#sha256:}"
+  if [ "$ACTUAL" != "$EXPECTED" ]; then
+    err "SHA-256 mismatch for $TAG: expected $EXPECTED, got $ACTUAL — aborting (tampered download)"
+  fi
+  muted "SHA-256 verified"
 fi
-muted "SHA-256 verified"
 
 tar xzf "$TMP/opencode.tar.gz" -C "$TMP" || err "Extraction failed"
 OC="$(find "$TMP" -maxdepth 2 -type f -name 'opencode' | head -1)"
@@ -532,20 +524,8 @@ if [ -x "$PE" ]; then
 fi
 
 NEW="$("$BIN" --version 2>/dev/null | head -1 || echo "installed")"
-info "Updated to pinned release: $NEW"
-muted "To bump the pinned version, edit OPENCODE_VERSION and OPENCODE_SHA256"
-muted "at the top of bootstrap.sh, then re-run bootstrap."
-
-# ─── Note about Bun ─────────────────────────────────────────────────────────
-BUN_BIN="$HOME_DIR/.bun/bin/buno"
-if [ -x "$BUN_BIN" ]; then
-  muted "Bun $BUN_VERSION is pinned too — to bump it, edit BUN_VERSION and"
-  muted "BUN_SHA256 at the top of bootstrap.sh, then re-run bootstrap."
-fi
+info "Updated to latest release: $NEW"
 UPDATE_SCRIPT
-
-# Inject the pinned config values (heredoc above is quoted on purpose)
-sed -i "s|@@OPENCODE_VERSION@@|$OPENCODE_VERSION|g; s|@@OPENCODE_SHA256@@|$OPENCODE_SHA256|g; s|@@BUN_VERSION@@|$BUN_VERSION|g" "$UPDATE_SCRIPT"
 
 chmod 755 "$UPDATE_SCRIPT"
 ok "update script created ($UPDATE_SCRIPT)"
@@ -569,11 +549,4 @@ echo ""
   printf '%s\n' "  ${GREEN}opencode-termux-update${NC}  Safe update (preserves launcher)"
   printf '%s\n' "  ${GREEN}opencode providers${NC}      Add API keys"
   printf '%s\n' "  ${GREEN}bunx${NC}                    Run OpenCode plugins via Bun"
-  printf '%s\n' "  ${GREEN}Workspace:${NC}              $WORKSPACE"
   echo ""
-  muted "Never run 'opencode update' directly — use opencode-termux-update instead."
-  muted "New sessions start in the workspace. Run 'cd ~' to leave it."
-echo ""
-
-# End inside the workspace so an interactive or sourced run lands there.
-cd "$WORKSPACE" 2>/dev/null || true

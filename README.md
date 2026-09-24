@@ -49,12 +49,12 @@ After install, these commands are available:
 ```
 opencode                Terminal UI
 opencode web            Web interface
-opencode-termux-update  Install the pinned release (never run `opencode update`)
+opencode-termux-update  Install the latest release (never run `opencode update`)
 opencode providers      Add API keys
 bunx                    Run OpenCode plugins/personas via Bun
 ```
 
-> **Update safely:** Run `opencode-termux-update` instead of `opencode update`. It installs the exact pinned release, verified against its pinned SHA-256, and preserves the launcher. The built-in `opencode update` restores the original ELF interpreter and breaks the Termux wrapper.
+> **Update safely:** Run `opencode-termux-update` instead of `opencode update`. It installs the latest release from GitHub, verified against the release asset SHA-256, and preserves the launcher. The built-in `opencode update` restores the original ELF interpreter and breaks the Termux wrapper.
 
 ---
 
@@ -77,8 +77,8 @@ Termux's `termux-exec` package uses `LD_PRELOAD` to intercept filesystem calls. 
 ## Requirements
 
 - **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/) — the Play Store version is outdated and won't work
-- **ARM64** (aarch64) device (enforced by the bootstrap)
-- **Android 11+** recommended
+- **ARM64** (aarch64) device **required for the OpenCode bootstrap** (enforced by the bootstrap)
+- **Android 7.0+** minimum for Termux
 - **~500 MB** free space (checked by the bootstrap)
 - **Internet** on first run
 
@@ -116,13 +116,15 @@ System-level paths:
 OpenCode ships a glibc-linked binary, but Termux uses Android's bionic libc. The glibc compatibility layer bridges this mismatch.
 
 **Can I use `opencode update`?**
-No. It restores the original ELF interpreter, which breaks the Termux wrapper. Use `opencode-termux-update`, which installs the pinned release after verifying its SHA-256.
+No. It restores the original ELF interpreter, which breaks the Termux wrapper. Use `opencode-termux-update`, which installs the latest release from GitHub after verifying its SHA-256.
 
 **How do I upgrade OpenCode?**
-Releases are pinned in `projects/termux-opencode/bootstrap.sh`. To bump: edit `OPENCODE_VERSION`, `OPENCODE_SHA256` (and `BUN_VERSION`, `BUN_SHA256` for Bun) at the top of that file (matching a real release tag and its asset sha256), then re-run the bootstrap. The update script it generates will then install that pinned version.
+Releases are pinned in `projects/termux-opencode/bootstrap.sh`. To bump: edit `OPENCODE_VERSION`, `OPENCODE_SHA256` (and `BUN_VERSION`, `BUN_SHA256` for Bun) at the top of that file (matching a real release tag and its asset sha256), then re-run the bootstrap. The generated `opencode-termux-update` now installs the latest release from GitHub (it no longer uses the pinned version from bootstrap).
 
 **Does this work on any Android device?**
-ARM64 only, Android 11+ recommended. Install Termux from F-Droid, not the Play Store.
+
+**Does this work on any Android device?**
+ARM64 (aarch64) only for the OpenCode bootstrap; Termux itself runs on additional architectures.
 
 **How do I uninstall?**
 Run `bash projects/termux-opencode/uninstall.sh` from the cloned repo.
@@ -148,7 +150,7 @@ Removes the OpenCode binary, launcher, update script, Bun and its launchers, and
 Restart the Termux session or run `source ~/.bashrc` to reload your PATH.
 
 **glibc error on launch**
-Run `opencode-termux-update` to re-install the pinned release and re-apply patchelf.
+Run `opencode-termux-update` to re-install the latest release and re-apply patchelf.
 
 **Bun/bunx fail or plugins won't load**
 Re-run the bootstrap. Its Bun-launcher repair pass re-links the shim and re-points `bun`/`bunx` at the wrapper on every run, so stale installs self-heal. A git clone failure (needed to build the `bun-termux` wrapper) falls back to the official binary with shell wrappers automatically.
