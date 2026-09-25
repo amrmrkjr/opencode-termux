@@ -41,8 +41,6 @@ That's it. The bootstrap installs everything you need — glibc compatibility la
 
 Releases are **pinned** (no "latest" chasing) and every downloaded binary is **SHA-256 verified** before install; a checksum mismatch aborts the install.
 
-Currently pinned: **OpenCode v1.18.15** and **Bun bun-v1.3.14**. The OpenCode digest comes from the GitHub release asset API (the release ships no `SHA256SUMS` file); the Bun digest comes from Bun's official `SHASUMS256.txt`. To bump either, edit `OPENCODE_VERSION`/`OPENCODE_SHA256` and `BUN_VERSION`/`BUN_SHA256` at the top of `bootstrap.sh`, then re-run the bootstrap.
-
 After install, these commands are available:
 
 ```

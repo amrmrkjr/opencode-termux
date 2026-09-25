@@ -28,17 +28,6 @@ bash projects/termux-opencode/bootstrap.sh
 8. **Creates update script** — `$PREFIX/bin/opencode-termux-update` installs the latest release from GitHub after verifying its SHA-256
 9. **Configures DNS** — writes `nsswitch.conf` for glibc's NSS resolver
 
-## Version pinning & checksums
-
-OpenCode and Bun are **pinned to exact release tags** — the bootstrap never chases "latest". Each download is verified against its pinned SHA-256 before anything is extracted or installed; a mismatch aborts with an error.
-
-| Component | Pinned value | Source of the hash |
-|-----------|-------------|--------------------|
-| OpenCode | v1.18.15 (`OPENCODE_VERSION` / `OPENCODE_SHA256`) | GitHub API asset digest for the pinned tag (no SHA256SUMS asset is shipped) |
-| Bun | bun-v1.3.14 (`BUN_VERSION` / `BUN_SHA256`) | Official `SHASUMS256.txt` shipped in the pinned Bun release |
-
-To bump to a newer release: edit `OPENCODE_VERSION` / `OPENCODE_SHA256` (and `BUN_VERSION` / `BUN_SHA256` for Bun) at the top of `bootstrap.sh` using that release's real tag and asset sha256, then re-run bootstrap. The generated `opencode-termux-update` now installs the latest release from GitHub (it no longer uses the pinned version from bootstrap).
-
 ## How it works
 
 Termux uses bionic libc, Android's standard C library. OpenCode ships as a glibc-linked linux-arm64 binary that expects `/lib/ld-linux-aarch64.so.1` — a path that does not exist on Termux. Running the binary as-is produces "No such file or directory" on the ELF interpreter.
@@ -111,7 +100,7 @@ The bootstrap does not export environment variables globally. Instead, the launc
 | `opencode providers` | Add API keys |
 | `bun` / `bunx` | Run OpenCode plugins via Bun |
 
-Never run `opencode update` directly — it restores the original interpreter and breaks the wrapper. Use `opencode-termux-update`, which installs the latest release from GitHub after verifying its SHA-256. To bump the pinned version in bootstrap, edit `OPENCODE_VERSION`/`OPENCODE_SHA256` (and `BUN_VERSION`/`BUN_SHA256` for Bun) at the top of `bootstrap.sh` and re-run bootstrap.
+Never run `opencode update` directly — it restores the original interpreter and breaks the wrapper. Use `opencode-termux-update`, which installs the latest release from GitHub after verifying its SHA-256. To bump the pinned version in bootstrap (for reproducibility only), edit `OPENCODE_VERSION`/`OPENCODE_SHA256` (and `BUN_VERSION`/`BUN_SHA256` for Bun) at the top of `bootstrap.sh` and re-run bootstrap.
 
 ## Troubleshooting
 
