@@ -3,13 +3,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/amrmrkjr/opencode-termux/stargazers"><img src="https://img.shields.io/github/stars/amrmrkjr/opencode-termux?style=for-the-badge&logo=github&label=Stars&color=facc15&labelColor=1a1a2e" alt="Stars"></a>
+<a href="https://github.com/amrmrkjr/opencode-termux/stargazers"><img src="https://img.shields.io/github/stars/amrmrkjr/opencode-termux?style=for-the-badge&logo=github&label=Stars&color=facc15&labelColor=1a1a2e" alt="Stars"></a>
   <a href="https://github.com/amrmrkjr/opencode-termux/actions"><img src="https://img.shields.io/github/actions/workflow/status/amrmrkjr/opencode-termux/ci.yml?style=for-the-badge&logo=github-actions&label=CI&color=22c55e&labelColor=1a1a2e" alt="CI"></a>
   <a href="https://github.com/amrmrkjr/opencode-termux/releases"><img src="https://img.shields.io/github/v/release/amrmrkjr/opencode-termux?style=for-the-badge&logo=linux&label=Version&color=a855f7&labelColor=1a1a2e" alt="Release"></a>
-  <img src="https://img.shields.io/badge/OpenCode-Termux-ec4899?style=for-the-badge&labelColor=1a1a2e" alt="OpenCode">
-  <img src="https://img.shields.io/badge/Android-11%2B-3b82f6?style=for-the-badge&logo=android&labelColor=1a1a2e" alt="Android">
-  <img src="https://img.shields.io/badge/Termux-FDroid-f97316?style=for-the-badge&logo=terminal&labelColor=1a1a2e" alt="Termux">
-  <img src="https://img.shields.io/badge/ARM64-aarch64-06b6d4?style=for-the-badge&labelColor=1a1a2e" alt="ARM64">
+ <img src="https://img.shields.io/badge/OpenCode-Termux-ec4899?style=for-the-badge&labelColor=1a1a2e" alt="OpenCode">
   <img src="https://img.shields.io/badge/license-MIT-64748b?style=for-the-badge&labelColor=1a1a2e" alt="MIT">
 </p>
 
