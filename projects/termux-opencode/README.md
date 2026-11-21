@@ -98,12 +98,16 @@ The bootstrap does not export environment variables globally. Instead, the launc
 | `opencode web` | Web interface |
 | `opencode-termux-update` | Install the latest v2 release from GitHub (SHA-256 verified, preserves launcher) |
 | `opencode-termux-install` | Pick any available version from a numbered menu (or pass an exact tag) |
+| `opencode-termux-bun-update` | Install the newest stable Bun release (SHA-256 verified, preserves launchers) |
+| `opencode-termux-bun-install` | Pick any Bun version from a numbered menu (or pass an exact tag) |
 | `opencode providers` | Add API keys |
 | `bun` / `bunx` | Run OpenCode plugins via Bun |
 
 Never run `opencode update` directly — it restores the original interpreter and breaks the wrapper. Use `opencode-termux-update`, which installs the latest v2 release from GitHub after verifying its SHA-256. To bump the pinned version in bootstrap (for reproducibility only), edit `OPENCODE_VERSION`/`OPENCODE_SHA256` (and `BUN_VERSION`/`BUN_SHA256` for Bun) at the top of `bootstrap.sh` and re-run bootstrap.
 
 To install an older release, run `opencode-termux-install`. It fetches all upstream releases, keeps only those with an `opencode-linux-arm64.tar.gz` asset, and shows them newest-first with release dates (25 per page, `n`/`p` to navigate, `q` to quit). Type the number shown and the chosen tag is handed to the updater's exact-tag path, which reads that release's asset digest from GitHub and verifies the download before installing. Pass a tag directly — `opencode-termux-install v1.18.32` — to skip the menu. Running plain `opencode-termux-update` afterwards still moves to the newest v2.
+
+Bun uses the same pair of commands: `opencode-termux-bun-update` installs the newest stable Bun release, while `opencode-termux-bun-install` lists releases that have both `bun-linux-aarch64.zip` and `SHASUMS256.txt`. Both download the zip and that release's checksum file, verify with `sha256sum`, replace only `~/.bun/bin/buno`, re-apply patchelf, and restore the wrapper's `bun-shim.so` symlink. The `bun` and `bunx` launchers are never rewritten. Set `BUN_VERSION=<tag>` on the update command (or pass the tag to the installer) to pin an exact release. The bootstrap's `BUN_VERSION`/`BUN_SHA256` pins still control clean installs only.
 
 ## Troubleshooting
 

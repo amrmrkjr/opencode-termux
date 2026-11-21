@@ -46,15 +46,19 @@ After install, these commands are available:
 ```
 opencode                Terminal UI
 opencode web            Web interface
-opencode-termux-update  Install the latest v2 release (never run `opencode update`)
-opencode-termux-install Pick any version from a menu
-opencode providers      Add API keys
-bunx                    Run OpenCode plugins/personas via Bun
+opencode-termux-update       Install the latest v2 release (never run `opencode update`)
+opencode-termux-install      Pick any OpenCode version from a menu
+opencode-termux-bun-update   Install the newest Bun release
+opencode-termux-bun-install  Pick any Bun version from a menu
+opencode providers           Add API keys
+bunx                         Run OpenCode plugins/personas via Bun
 ```
 
 > **Update safely:** Run `opencode-termux-update` instead of `opencode update`. It installs the latest v2 release from GitHub, verified against the release asset SHA-256, and preserves the launcher. The built-in `opencode update` restores the original ELF interpreter and breaks the Termux wrapper.
 
 **Want an older version?** Run `opencode-termux-install`. It lists every OpenCode release that has a Termux-compatible arm64 binary — tag and release date, 25 per page. Type the number you see and it installs that version with the same SHA-256 verification and launcher repair. You never have to type a version tag. `opencode-termux-update` still moves you to the newest v2 afterwards. For scripts, `opencode-termux-install v1.18.32` skips the menu.
+
+**Bun versions work the same way.** `opencode-termux-bun-update` installs the newest stable Bun release; `opencode-termux-bun-install` shows a numbered menu of all releases with both `bun-linux-aarch64.zip` and `SHASUMS256.txt`. Both swap only `~/.bun/bin/buno` — `bun` and `bunx` keep routing through the Termux wrapper — and verify the zip against that release's SHASUMS256.txt before installing. `opencode-termux-bun-install bun-v1.3.0` skips the menu for scripts.
 
 ---
 
@@ -106,6 +110,8 @@ System-level paths:
 | `$PREFIX/bin/opencode` | Launcher entry point |
 | `$PREFIX/bin/opencode-termux-update` | Safe update script |
 | `$PREFIX/bin/opencode-termux-install` | Version picker / installer |
+| `$PREFIX/bin/opencode-termux-bun-update` | Bun update script |
+| `$PREFIX/bin/opencode-termux-bun-install` | Bun version picker / installer |
 | `$PREFIX/bin/bun` | Bun launcher |
 | `$PREFIX/bin/bunx` | Bunx launcher |
 
@@ -124,6 +130,9 @@ Releases are pinned in `projects/termux-opencode/bootstrap.sh`. To bump: edit `O
 
 **How do I install an older version?**
 Run `opencode-termux-install`, pick a release from the numbered list, and it installs that exact tag. Only releases with an `opencode-linux-arm64.tar.gz` asset are listed. Its checksum is read from that release's GitHub metadata and verified before install. To stay on an old version, simply don't run `opencode-termux-update` — that command always goes to the newest v2.
+
+**How do I change the Bun version?**
+Run `opencode-termux-bun-install` and pick from the numbered list, or run `opencode-termux-bun-update` to go to the newest stable release. Only `~/.bun/bin/buno` is replaced; the `bun`/`bunx` launchers and wrapper stay as they are. The zip is checked against the release's SHASUMS256.txt before install. Pinned versions stay in `bootstrap.sh` for clean installs; these commands change only the currently installed Bun.
 
 **Does this work on any Android device?**
 

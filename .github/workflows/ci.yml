@@ -30,6 +30,18 @@ jobs:
       - name: Version menu test
         run: bash tests/test-install-version-menu.sh
 
+      - name: Bun updater latest-release test
+        run: bash tests/test-bun-updater-latest.sh
+
+      - name: Bun updater exact-version test
+        run: bash tests/test-bun-updater-version-override.sh
+
+      - name: Bun updater checksum-mismatch test
+        run: bash tests/test-bun-updater-checksum-mismatch.sh
+
+      - name: Bun version menu test
+        run: bash tests/test-bun-version-menu.sh
+
       - name: ShellCheck lint
         run: |
           errors=0
