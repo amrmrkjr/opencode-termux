@@ -25,7 +25,7 @@ bash projects/termux-opencode/bootstrap.sh
 5. **Installs Bun** — official binary pinned to `bun-v1.4.5`, SHA-256 verified, stored as `buno`; launchers `bun`/`bunx` route through the `bun-termux` wrapper (or a shell wrapper fallback)
 6. **Bun launcher repair pass** — re-links the wrapper shim and re-points `bun`/`bunx` at the wrapper on every run (idempotent), so stale or partial installs self-heal
 7. **Creates launcher** — `$PREFIX/bin/opencode` with self-healing patchelf (re-applies after self-update)
-8. **Creates update script** — `$PREFIX/bin/opencode-termux-update` installs the latest v2 release from GitHub after verifying its SHA-256
+8. **Creates update script** — `$PREFIX/bin/opencode-termux-update` installs the latest v2 release from GitHub after verifying its SHA-256. It also creates `$PREFIX/bin/opencode-termux-install`, a numbered menu of every release with an arm64 asset so older versions can be installed without typing a tag.
 9. **Configures DNS** — writes `nsswitch.conf` for glibc's NSS resolver
 
 ## How it works
@@ -97,10 +97,13 @@ The bootstrap does not export environment variables globally. Instead, the launc
 | `opencode` | Terminal UI |
 | `opencode web` | Web interface |
 | `opencode-termux-update` | Install the latest v2 release from GitHub (SHA-256 verified, preserves launcher) |
+| `opencode-termux-install` | Pick any available version from a numbered menu (or pass an exact tag) |
 | `opencode providers` | Add API keys |
 | `bun` / `bunx` | Run OpenCode plugins via Bun |
 
 Never run `opencode update` directly — it restores the original interpreter and breaks the wrapper. Use `opencode-termux-update`, which installs the latest v2 release from GitHub after verifying its SHA-256. To bump the pinned version in bootstrap (for reproducibility only), edit `OPENCODE_VERSION`/`OPENCODE_SHA256` (and `BUN_VERSION`/`BUN_SHA256` for Bun) at the top of `bootstrap.sh` and re-run bootstrap.
+
+To install an older release, run `opencode-termux-install`. It fetches all upstream releases, keeps only those with an `opencode-linux-arm64.tar.gz` asset, and shows them newest-first with release dates (25 per page, `n`/`p` to navigate, `q` to quit). Type the number shown and the chosen tag is handed to the updater's exact-tag path, which reads that release's asset digest from GitHub and verifies the download before installing. Pass a tag directly — `opencode-termux-install v1.18.32` — to skip the menu. Running plain `opencode-termux-update` afterwards still moves to the newest v2.
 
 ## Troubleshooting
 

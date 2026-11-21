@@ -24,6 +24,12 @@ jobs:
       - name: Updater release-selection test
         run: bash tests/test-updater-selects-latest-v2.sh
 
+      - name: Updater exact-version test
+        run: bash tests/test-updater-version-override.sh
+
+      - name: Version menu test
+        run: bash tests/test-install-version-menu.sh
+
       - name: ShellCheck lint
         run: |
           errors=0

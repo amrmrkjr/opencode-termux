@@ -480,18 +480,28 @@ info "Current version: $CURRENT"
 
 command -v jq >/dev/null 2>&1 || err "jq is required — re-run bootstrap.sh to install it"
 
-# Resolve the newest v2 release from the GitHub API (skips pre-releases)
-muted "Querying GitHub API for the latest v2 release…"
-API="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" || err "Failed to query GitHub API")"
-REL="$(printf '%s' "$API" | jq -c '[.[] | select(.prerelease == false) | select(.tag_name | startswith("v2."))] | sort_by(.published_at) | last')"
-TAG="$(printf '%s' "$REL" | jq -r '.tag_name // empty')"
-[ -n "$TAG" ] && [ "$TAG" != "null" ] || err "No v2 release found for $REPO"
-info "Latest release: $TAG"
+# Resolve an explicitly requested tag, or the newest v2 release by default.
+if [ -n "${OPENCODE_VERSION:-}" ]; then
+  TAG="$OPENCODE_VERSION"
+  muted "Resolving requested release $TAG…"
+  REL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/$TAG" || err "Release $TAG not found in $REPO")"
+  info "Requested release: $TAG"
+else
+  muted "Querying GitHub API for the latest v2 release…"
+  API="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" || err "Failed to query GitHub API")"
+  REL="$(printf '%s' "$API" | jq -c '[.[] | select(.prerelease == false) | select(.tag_name | startswith("v2."))] | sort_by(.published_at) | last')"
+  TAG="$(printf '%s' "$REL" | jq -r '.tag_name // empty')"
+  [ -n "$TAG" ] && [ "$TAG" != "null" ] || err "No v2 release found for $REPO"
+  info "Latest release: $TAG"
+fi
 
 ASSET="$(printf '%s' "$REL" | jq -c '[.assets[] | select(.name == "opencode-linux-arm64.tar.gz")][0]')"
 [ -n "$ASSET" ] && [ "$ASSET" != "null" ] || err "Asset opencode-linux-arm64.tar.gz not found in $TAG"
 URL="$(printf '%s' "$ASSET" | jq -r '.browser_download_url')"
 DIGEST="$(printf '%s' "$ASSET" | jq -r '.digest // empty')"
+if [ -n "${OPENCODE_VERSION:-}" ] && [ -z "$DIGEST" ]; then
+  err "No SHA-256 digest published for $TAG — refusing to install unverified"
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -533,6 +543,114 @@ UPDATE_SCRIPT
 chmod 755 "$UPDATE_SCRIPT"
 ok "update script created ($UPDATE_SCRIPT)"
 
+# ─── Create version installer ───────────────────────────────────────────────
+info "Creating version installer…"
+
+INSTALL_SCRIPT="$PREFIX/bin/opencode-termux-install"
+cat > "$INSTALL_SCRIPT" << 'INSTALL_SCRIPT'
+#!/data/data/com.termux/files/usr/bin/sh
+# opencode-termux-install — Pick an OpenCode release to install
+#
+# Shows a numbered menu of releases that have a Termux-compatible arm64
+# asset, then hands the chosen tag to opencode-termux-update. An exact tag
+# can be passed as an argument to skip the menu.
+set -eu
+
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+UPDATE="$PREFIX/bin/opencode-termux-update"
+REPO="anomalyco/opencode"
+PAGE_SIZE=25
+
+GREEN='\033[0;32m'
+DIM='\033[0;2m'
+NC='\033[0m'
+info()  { printf "${GREEN}◆${NC} %s\n" "$*"; }
+muted() { printf "${DIM}  %s${NC}\n" "$*"; }
+err()   { printf "\033[0;31m  ✗${NC} %s\n" "$*" >&2; exit 1; }
+
+[ -x "$UPDATE" ] || err "opencode-termux-update not found — re-run bootstrap.sh"
+command -v jq >/dev/null 2>&1 || err "jq is required — re-run bootstrap.sh"
+
+if [ "$#" -gt 0 ]; then
+  TAG="$1"
+else
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  : > "$TMP/pages"
+
+  # Fetch all release pages (upstream has ~900; cap at 20 to avoid runaway).
+  page=1
+  while [ "$page" -le 20 ]; do
+    body="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page" || err "Failed to query GitHub API")"
+    count="$(printf '%s' "$body" | jq 'length')"
+    [ "$count" -gt 0 ] || break
+    printf '%s\n' "$body" >> "$TMP/pages"
+    page=$((page + 1))
+  done
+
+  # Keep only releases with an opencode-linux-arm64.tar.gz asset.
+  jq -s 'add | [
+    .[]
+    | select(any(.assets[]?; .name == "opencode-linux-arm64.tar.gz"))
+    | . as $rel
+    | {tag: .tag_name,
+       ts: ($rel.published_at // $rel.created_at // ""),
+       date: (($rel.published_at // $rel.created_at // "") | .[0:10]),
+       pre: .prerelease}
+  ] | sort_by(.ts) | reverse' "$TMP/pages" > "$TMP/list"
+
+  TOTAL="$(jq 'length' "$TMP/list")"
+  [ "$TOTAL" -gt 0 ] || err "No installable OpenCode releases found for $REPO"
+
+  START=1
+  while :; do
+    END=$((START + PAGE_SIZE - 1))
+    [ "$END" -le "$TOTAL" ] || END="$TOTAL"
+    echo ""
+    info "Available OpenCode versions ($START–$END of $TOTAL)"
+    echo ""
+    jq -r --argjson s "$START" --argjson e "$END" '
+      .[$s - 1:$e] | to_entries[] |
+      "  \(.key + $s)) \(.value.tag)  \(.value.date)\(if .value.pre then "  (pre-release)" else "" end)"
+    ' "$TMP/list"
+    echo ""
+    muted "[n]ext page  [p]revious page  [q]uit  or type a number"
+    printf 'Select version: '
+    read -r CHOICE || exit 0
+    case "$CHOICE" in
+      q|Q) exit 0 ;;
+      n|N)
+        if [ "$END" -lt "$TOTAL" ]; then START=$((END + 1)); else muted "Already on the last page"; fi
+        ;;
+      p|P)
+        if [ "$START" -gt 1 ]; then
+          CUR=$(( (START - 1) / PAGE_SIZE + 1 ))
+          START=$(( (CUR - 2) * PAGE_SIZE + 1 ))
+          [ "$START" -gt 0 ] || START=1
+        else
+          muted "Already on the first page"
+        fi
+        ;;
+      ''|*[!0-9]*) muted "Enter a number, n, p, or q" ;;
+      *)
+        if [ "$CHOICE" -ge "$START" ] && [ "$CHOICE" -le "$END" ]; then
+          TAG="$(jq -r ".[$CHOICE - 1].tag" "$TMP/list")"
+          break
+        fi
+        muted "Number out of range (choose $START–$END)"
+        ;;
+    esac
+  done
+fi
+
+muted "Installing $TAG…"
+export OPENCODE_VERSION="$TAG"
+exec "$UPDATE"
+INSTALL_SCRIPT
+
+chmod 755 "$INSTALL_SCRIPT"
+ok "version installer created ($INSTALL_SCRIPT)"
+
 # ─── Summary ────────────────────────────────────────────────────────────────
 echo ""
 info "${BOLD}Install complete${NC}"
@@ -550,6 +668,7 @@ echo ""
   printf '%s\n' "  ${GREEN}opencode${NC}                Terminal UI"
   printf '%s\n' "  ${GREEN}opencode web${NC}            Web interface"
   printf '%s\n' "  ${GREEN}opencode-termux-update${NC}  Safe update (preserves launcher)"
+  printf '%s\n' "  ${GREEN}opencode-termux-install${NC} Pick any version from a menu"
   printf '%s\n' "  ${GREEN}opencode providers${NC}      Add API keys"
   printf '%s\n' "  ${GREEN}bunx${NC}                    Run OpenCode plugins via Bun"
   echo ""

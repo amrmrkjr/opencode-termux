@@ -47,11 +47,14 @@ After install, these commands are available:
 opencode                Terminal UI
 opencode web            Web interface
 opencode-termux-update  Install the latest v2 release (never run `opencode update`)
+opencode-termux-install Pick any version from a menu
 opencode providers      Add API keys
 bunx                    Run OpenCode plugins/personas via Bun
 ```
 
 > **Update safely:** Run `opencode-termux-update` instead of `opencode update`. It installs the latest v2 release from GitHub, verified against the release asset SHA-256, and preserves the launcher. The built-in `opencode update` restores the original ELF interpreter and breaks the Termux wrapper.
+
+**Want an older version?** Run `opencode-termux-install`. It lists every OpenCode release that has a Termux-compatible arm64 binary — tag and release date, 25 per page. Type the number you see and it installs that version with the same SHA-256 verification and launcher repair. You never have to type a version tag. `opencode-termux-update` still moves you to the newest v2 afterwards. For scripts, `opencode-termux-install v1.18.32` skips the menu.
 
 ---
 
@@ -102,6 +105,7 @@ System-level paths:
 |------|---------|
 | `$PREFIX/bin/opencode` | Launcher entry point |
 | `$PREFIX/bin/opencode-termux-update` | Safe update script |
+| `$PREFIX/bin/opencode-termux-install` | Version picker / installer |
 | `$PREFIX/bin/bun` | Bun launcher |
 | `$PREFIX/bin/bunx` | Bunx launcher |
 
@@ -117,6 +121,9 @@ No. It restores the original ELF interpreter, which breaks the Termux wrapper. U
 
 **How do I upgrade OpenCode?**
 Releases are pinned in `projects/termux-opencode/bootstrap.sh`. To bump: edit `OPENCODE_VERSION`, `OPENCODE_SHA256` (and `BUN_VERSION`, `BUN_SHA256` for Bun) at the top of that file (matching a real release tag and its asset sha256), then re-run the bootstrap. The generated `opencode-termux-update` now installs the latest v2 release from GitHub (it no longer uses the pinned version from bootstrap).
+
+**How do I install an older version?**
+Run `opencode-termux-install`, pick a release from the numbered list, and it installs that exact tag. Only releases with an `opencode-linux-arm64.tar.gz` asset are listed. Its checksum is read from that release's GitHub metadata and verified before install. To stay on an old version, simply don't run `opencode-termux-update` — that command always goes to the newest v2.
 
 **Does this work on any Android device?**
 
