@@ -22,7 +22,7 @@ bash projects/termux-opencode/bootstrap.sh
 2. **Deps** — `curl jq tar ripgrep clang make git` (git is required to build the Bun wrapper from `tribixbite/bun-on-termux`), plus Node.js/npm
 3. **Downloads the official OpenCode binary** — the `opencode-linux-arm64.tar.gz` tarball for the exact release tag in `bootstrap.sh`, SHA-256 verified before extraction (mismatch aborts the install). The bootstrap pins versions for reproducibility; the generated `opencode-termux-update` now installs the latest v2 release from GitHub (independent of the pinned version).
 4. **Patchelf's the interpreter** — sets the binary's dynamic linker to Termux's glibc loader (`$PREFIX/glibc/lib/ld-linux-aarch64.so.1`)
-5. **Installs Bun** — official binary pinned to `bun-v1.3.14`, SHA-256 verified, stored as `buno`; launchers `bun`/`bunx` route through the `bun-termux` wrapper (or a shell wrapper fallback)
+5. **Installs Bun** — official binary pinned to `bun-v1.4.5`, SHA-256 verified, stored as `buno`; launchers `bun`/`bunx` route through the `bun-termux` wrapper (or a shell wrapper fallback)
 6. **Bun launcher repair pass** — re-links the wrapper shim and re-points `bun`/`bunx` at the wrapper on every run (idempotent), so stale or partial installs self-heal
 7. **Creates launcher** — `$PREFIX/bin/opencode` with self-healing patchelf (re-applies after self-update)
 8. **Creates update script** — `$PREFIX/bin/opencode-termux-update` installs the latest v2 release from GitHub after verifying its SHA-256

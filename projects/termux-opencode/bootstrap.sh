@@ -49,15 +49,15 @@ verify_sha256() {
 #   OpenCode v2.3.2, asset opencode-linux-arm64.tar.gz — from the release's
 #     SHA256SUMS, cross-checked against the GitHub API asset digest.
 #     Reviewed here on 2026-11-22.
-#   Bun bun-v1.3.14, asset bun-linux-aarch64.zip — from the official
-#     SHASUMS256.txt shipped in that release. Verified here on 2026-08-08.
+#   Bun bun-v1.4.5, asset bun-linux-aarch64.zip — from the official
+#     SHASUMS256.txt shipped in that release. Verified here on 2026-11-22.
 #
 # To bump: set both the tag and the matching sha256, then re-run bootstrap.
 # `opencode-termux-update` tracks the latest v2 release independently.
 OPENCODE_VERSION="v2.3.2"
 OPENCODE_SHA256="9d10185acdb72336e086e699ca363a6065f410fd3c1caed0dc8046e95ac06ccb"
-BUN_VERSION="bun-v1.3.14"
-BUN_SHA256="a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b"
+BUN_VERSION="bun-v1.4.5"
+BUN_SHA256="18656a3bf0ea5641f5796ae4213b75255579a70a0fded2f337933785568cdf84"
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
