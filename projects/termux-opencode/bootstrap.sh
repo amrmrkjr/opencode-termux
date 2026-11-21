@@ -557,6 +557,7 @@ cat > "$INSTALL_SCRIPT" << 'INSTALL_SCRIPT'
 set -eu
 
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOME_DIR="${HOME:-/data/data/com.termux/files/home}"
 UPDATE="$PREFIX/bin/opencode-termux-update"
 REPO="anomalyco/opencode"
 PAGE_SIZE=25
@@ -578,35 +579,86 @@ else
   trap 'rm -rf "$TMP"' EXIT
   : > "$TMP/pages"
 
-  # Fetch all release pages (upstream has ~900; cap at 20 to avoid runaway).
-  # GitHub returns HTTP 422 once pagination passes its 1000-result window —
-  # that means "no more results", not a failed request.
-  page=1
-  while [ "$page" -le 20 ]; do
-    response="$(curl -sS -w '\n%{http_code}' "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page" || err "Failed to query GitHub API")"
-    status="$(printf '%s\n' "$response" | tail -1)"
-    body="$(printf '%s\n' "$response" | sed '$d')"
-    case "$status" in
-      200) ;;
-      422) break ;;
-      *) err "Failed to query GitHub API (HTTP $status)" ;;
-    esac
-    count="$(printf '%s' "$body" | jq 'length')"
-    [ "$count" -gt 0 ] || break
-    printf '%s\n' "$body" >> "$TMP/pages"
-    page=$((page + 1))
-  done
+  CACHE_DIR="$HOME_DIR/.cache/opencode-termux"
+  mkdir -p "$CACHE_DIR" 2>/dev/null || true
+  CACHE="$CACHE_DIR/versions.json"
+  CACHE_TS="$CACHE_DIR/versions.ts"
 
-  # Keep only releases with an opencode-linux-arm64.tar.gz asset.
-  jq -s 'add | [
-    .[]
-    | select(any(.assets[]?; .name == "opencode-linux-arm64.tar.gz"))
-    | . as $rel
-    | {tag: .tag_name,
-       ts: ($rel.published_at // $rel.created_at // ""),
-       date: (($rel.published_at // $rel.created_at // "") | .[0:10]),
-       pre: .prerelease}
-  ] | sort_by(.ts) | reverse' "$TMP/pages" > "$TMP/list"
+  api_get() {
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" -w '\n%{http_code}' "$1"
+    else
+      curl -sS -w '\n%{http_code}' "$1"
+    fi
+  }
+
+  use_cache=0
+  if [ -s "$CACHE" ] && [ -s "$CACHE_TS" ]; then
+    cached_at="$(cat "$CACHE_TS")"
+    now="$(date +%s)"
+    case "$cached_at" in
+      ''|*[!0-9]*) ;;
+      *) if [ $((now - cached_at)) -lt 86400 ]; then use_cache=1; fi ;;
+    esac
+  fi
+
+  if [ "$use_cache" -eq 0 ]; then
+    # GitHub 422 = past its 1000-result window; 403 = unauthenticated rate limit.
+    page=1
+    while [ "$page" -le 20 ]; do
+      response="$(api_get "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page")" || {
+        if [ -s "$CACHE" ]; then
+          muted "GitHub API unavailable — using cached version list"
+          use_cache=1
+          break
+        fi
+        err "Failed to query GitHub API — check your connection"
+      }
+      status="$(printf '%s\n' "$response" | tail -1)"
+      body="$(printf '%s\n' "$response" | sed '$d')"
+      case "$status" in
+        200) ;;
+        422) break ;;
+        403)
+          if [ -s "$CACHE" ]; then
+            muted "GitHub API rate limit reached — using cached version list"
+            use_cache=1
+            break
+          fi
+          err "GitHub API rate limit reached for this IP (60 requests/hour). Wait up to an hour, or set GITHUB_TOKEN for a higher limit. You can still install a known tag: opencode-termux-install <tag>"
+          ;;
+        *)
+          if [ -s "$CACHE" ]; then
+            muted "GitHub API error (HTTP $status) — using cached version list"
+            use_cache=1
+            break
+          fi
+          err "Failed to query GitHub API (HTTP $status)"
+          ;;
+      esac
+      count="$(printf '%s' "$body" | jq 'length')"
+      [ "$count" -gt 0 ] || break
+      printf '%s\n' "$body" >> "$TMP/pages"
+      page=$((page + 1))
+    done
+  fi
+
+  if [ "$use_cache" -eq 1 ]; then
+    cp "$CACHE" "$TMP/list"
+  else
+    # Keep only releases with an opencode-linux-arm64.tar.gz asset.
+    jq -s 'add | [
+      .[]
+      | select(any(.assets[]?; .name == "opencode-linux-arm64.tar.gz"))
+      | . as $rel
+      | {tag: .tag_name,
+         ts: ($rel.published_at // $rel.created_at // ""),
+         date: (($rel.published_at // $rel.created_at // "") | .[0:10]),
+         pre: .prerelease}
+    ] | sort_by(.ts) | reverse' "$TMP/pages" > "$TMP/list"
+    cp "$TMP/list" "$CACHE"
+    date +%s > "$CACHE_TS"
+  fi
 
   TOTAL="$(jq 'length' "$TMP/list")"
   [ "$TOTAL" -gt 0 ] || err "No installable OpenCode releases found for $REPO"
@@ -777,6 +829,7 @@ cat > "$BUN_INSTALL_SCRIPT" << 'BUN_INSTALL_SCRIPT'
 set -eu
 
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOME_DIR="${HOME:-/data/data/com.termux/files/home}"
 UPDATE="$PREFIX/bin/opencode-termux-bun-update"
 REPO="oven-sh/bun"
 PAGE_SIZE=25
@@ -798,35 +851,87 @@ else
   trap 'rm -rf "$TMP"' EXIT
   : > "$TMP/pages"
 
-  # GitHub returns HTTP 422 once pagination passes its 1000-result window —
-  # that means "no more results", not a failed request.
-  page=1
-  while [ "$page" -le 20 ]; do
-    response="$(curl -sS -w '\n%{http_code}' "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page" || err "Failed to query GitHub API")"
-    status="$(printf '%s\n' "$response" | tail -1)"
-    body="$(printf '%s\n' "$response" | sed '$d')"
-    case "$status" in
-      200) ;;
-      422) break ;;
-      *) err "Failed to query GitHub API (HTTP $status)" ;;
-    esac
-    count="$(printf '%s' "$body" | jq 'length')"
-    [ "$count" -gt 0 ] || break
-    printf '%s\n' "$body" >> "$TMP/pages"
-    page=$((page + 1))
-  done
+  CACHE_DIR="$HOME_DIR/.cache/opencode-termux"
+  mkdir -p "$CACHE_DIR" 2>/dev/null || true
+  CACHE="$CACHE_DIR/bun-versions.json"
+  CACHE_TS="$CACHE_DIR/bun-versions.ts"
 
-  # Only releases with both the arm64 zip and its checksum can be installed.
-  jq -s 'add | [
-    .[]
-    | select(any(.assets[]?; .name == "bun-linux-aarch64.zip"))
-    | select(any(.assets[]?; .name == "SHASUMS256.txt"))
-    | . as $rel
-    | {tag: .tag_name,
-       ts: ($rel.published_at // $rel.created_at // ""),
-       date: (($rel.published_at // $rel.created_at // "") | .[0:10]),
-       pre: .prerelease}
-  ] | sort_by(.ts) | reverse' "$TMP/pages" > "$TMP/list"
+  api_get() {
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" -w '\n%{http_code}' "$1"
+    else
+      curl -sS -w '\n%{http_code}' "$1"
+    fi
+  }
+
+  use_cache=0
+  if [ -s "$CACHE" ] && [ -s "$CACHE_TS" ]; then
+    cached_at="$(cat "$CACHE_TS")"
+    now="$(date +%s)"
+    case "$cached_at" in
+      ''|*[!0-9]*) ;;
+      *) if [ $((now - cached_at)) -lt 86400 ]; then use_cache=1; fi ;;
+    esac
+  fi
+
+  if [ "$use_cache" -eq 0 ]; then
+    # GitHub 422 = past its 1000-result window; 403 = unauthenticated rate limit.
+    page=1
+    while [ "$page" -le 20 ]; do
+      response="$(api_get "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page")" || {
+        if [ -s "$CACHE" ]; then
+          muted "GitHub API unavailable — using cached version list"
+          use_cache=1
+          break
+        fi
+        err "Failed to query GitHub API — check your connection"
+      }
+      status="$(printf '%s\n' "$response" | tail -1)"
+      body="$(printf '%s\n' "$response" | sed '$d')"
+      case "$status" in
+        200) ;;
+        422) break ;;
+        403)
+          if [ -s "$CACHE" ]; then
+            muted "GitHub API rate limit reached — using cached version list"
+            use_cache=1
+            break
+          fi
+          err "GitHub API rate limit reached for this IP (60 requests/hour). Wait up to an hour, or set GITHUB_TOKEN for a higher limit. You can still install a known tag: opencode-termux-bun-install <tag>"
+          ;;
+        *)
+          if [ -s "$CACHE" ]; then
+            muted "GitHub API error (HTTP $status) — using cached version list"
+            use_cache=1
+            break
+          fi
+          err "Failed to query GitHub API (HTTP $status)"
+          ;;
+      esac
+      count="$(printf '%s' "$body" | jq 'length')"
+      [ "$count" -gt 0 ] || break
+      printf '%s\n' "$body" >> "$TMP/pages"
+      page=$((page + 1))
+    done
+  fi
+
+  if [ "$use_cache" -eq 1 ]; then
+    cp "$CACHE" "$TMP/list"
+  else
+    # Only releases with both the arm64 zip and its checksum can be installed.
+    jq -s 'add | [
+      .[]
+      | select(any(.assets[]?; .name == "bun-linux-aarch64.zip"))
+      | select(any(.assets[]?; .name == "SHASUMS256.txt"))
+      | . as $rel
+      | {tag: .tag_name,
+         ts: ($rel.published_at // $rel.created_at // ""),
+         date: (($rel.published_at // $rel.created_at // "") | .[0:10]),
+         pre: .prerelease}
+    ] | sort_by(.ts) | reverse' "$TMP/pages" > "$TMP/list"
+    cp "$TMP/list" "$CACHE"
+    date +%s > "$CACHE_TS"
+  fi
 
   TOTAL="$(jq 'length' "$TMP/list")"
   [ "$TOTAL" -gt 0 ] || err "No installable Bun releases found for $REPO"

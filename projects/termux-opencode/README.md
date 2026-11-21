@@ -109,6 +109,8 @@ To install an older release, run `opencode-termux-install`. It fetches all upstr
 
 Bun uses the same pair of commands: `opencode-termux-bun-update` installs the newest stable Bun release, while `opencode-termux-bun-install` lists releases that have both `bun-linux-aarch64.zip` and `SHASUMS256.txt`. Both download the zip and that release's checksum file, verify with `sha256sum`, replace only `~/.bun/bin/buno`, re-apply patchelf, and restore the wrapper's `bun-shim.so` symlink. The `bun` and `bunx` launchers are never rewritten. Set `BUN_VERSION=<tag>` on the update command (or pass the tag to the installer) to pin an exact release. The bootstrap's `BUN_VERSION`/`BUN_SHA256` pins still control clean installs only.
 
+Both menus cache their filtered release lists in `~/.cache/opencode-termux/` (`versions.json` / `bun-versions.json`, with a `.ts` timestamp) for 24 hours. A 403 from GitHub's unauthenticated rate limit is reported clearly, and any existing cache — even an expired one — is used as a fallback. Set `GITHUB_TOKEN` before running a menu to authenticate and get the higher rate limit.
+
 ## Troubleshooting
 
 **`opencode` command not found** — restart the Termux session or run `source ~/.bashrc` to reload PATH.

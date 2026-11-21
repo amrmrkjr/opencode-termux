@@ -60,6 +60,8 @@ bunx                         Run OpenCode plugins/personas via Bun
 
 **Bun versions work the same way.** `opencode-termux-bun-update` installs the newest stable Bun release; `opencode-termux-bun-install` shows a numbered menu of all releases with both `bun-linux-aarch64.zip` and `SHASUMS256.txt`. Both swap only `~/.bun/bin/buno` — `bun` and `bunx` keep routing through the Termux wrapper — and verify the zip against that release's SHASUMS256.txt before installing. `opencode-termux-bun-install bun-v1.3.0` skips the menu for scripts.
 
+The menus cache their release lists in `~/.cache/opencode-termux/` for 24 hours, so repeated opens don't consume GitHub API calls. If GitHub's unauthenticated limit (60 requests/hour per IP) is reached, the menus fall back to a cached list when one exists; otherwise they show a clear message. Set `GITHUB_TOKEN` in your environment before running them to use GitHub's much higher authenticated rate limit.
+
 ---
 
 ## How It Works

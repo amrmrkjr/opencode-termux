@@ -33,6 +33,9 @@ jobs:
       - name: Version menu GitHub cap test
         run: bash tests/test-install-menu-github-cap.sh
 
+      - name: Version menu rate-limit/cache test
+        run: bash tests/test-install-menu-ratelimit.sh
+
       - name: Bun updater latest-release test
         run: bash tests/test-bun-updater-latest.sh
 
@@ -47,6 +50,9 @@ jobs:
 
       - name: Bun version menu GitHub cap test
         run: bash tests/test-bun-install-menu-github-cap.sh
+
+      - name: Bun version menu rate-limit/cache test
+        run: bash tests/test-bun-install-menu-ratelimit.sh
 
       - name: ShellCheck lint
         run: |
