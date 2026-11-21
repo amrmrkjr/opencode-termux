@@ -30,6 +30,9 @@ jobs:
       - name: Version menu test
         run: bash tests/test-install-version-menu.sh
 
+      - name: Version menu GitHub cap test
+        run: bash tests/test-install-menu-github-cap.sh
+
       - name: Bun updater latest-release test
         run: bash tests/test-bun-updater-latest.sh
 
@@ -41,6 +44,9 @@ jobs:
 
       - name: Bun version menu test
         run: bash tests/test-bun-version-menu.sh
+
+      - name: Bun version menu GitHub cap test
+        run: bash tests/test-bun-install-menu-github-cap.sh
 
       - name: ShellCheck lint
         run: |

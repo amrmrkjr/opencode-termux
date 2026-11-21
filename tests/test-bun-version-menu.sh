@@ -51,9 +51,9 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$url" in
-  *"releases?per_page=100&page=1") cat "$PAGE1" ;;
-  *"releases?per_page=100&page=2") cat "$PAGE2" ;;
-  *"releases?per_page=100&page="*) printf '[]\n' ;;
+  *"releases?per_page=100&page=1") cat "$PAGE1"; printf '\n200' ;;
+  *"releases?per_page=100&page=2") cat "$PAGE2"; printf '\n200' ;;
+  *"releases?per_page=100&page="*) printf '[]\n200' ;;
   *) echo "unexpected curl URL: $url" >&2; exit 1 ;;
 esac
 STUB

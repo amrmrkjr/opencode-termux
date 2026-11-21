@@ -579,9 +579,18 @@ else
   : > "$TMP/pages"
 
   # Fetch all release pages (upstream has ~900; cap at 20 to avoid runaway).
+  # GitHub returns HTTP 422 once pagination passes its 1000-result window —
+  # that means "no more results", not a failed request.
   page=1
   while [ "$page" -le 20 ]; do
-    body="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page" || err "Failed to query GitHub API")"
+    response="$(curl -sS -w '\n%{http_code}' "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page" || err "Failed to query GitHub API")"
+    status="$(printf '%s\n' "$response" | tail -1)"
+    body="$(printf '%s\n' "$response" | sed '$d')"
+    case "$status" in
+      200) ;;
+      422) break ;;
+      *) err "Failed to query GitHub API (HTTP $status)" ;;
+    esac
     count="$(printf '%s' "$body" | jq 'length')"
     [ "$count" -gt 0 ] || break
     printf '%s\n' "$body" >> "$TMP/pages"
@@ -789,9 +798,18 @@ else
   trap 'rm -rf "$TMP"' EXIT
   : > "$TMP/pages"
 
+  # GitHub returns HTTP 422 once pagination passes its 1000-result window —
+  # that means "no more results", not a failed request.
   page=1
   while [ "$page" -le 20 ]; do
-    body="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page" || err "Failed to query GitHub API")"
+    response="$(curl -sS -w '\n%{http_code}' "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page" || err "Failed to query GitHub API")"
+    status="$(printf '%s\n' "$response" | tail -1)"
+    body="$(printf '%s\n' "$response" | sed '$d')"
+    case "$status" in
+      200) ;;
+      422) break ;;
+      *) err "Failed to query GitHub API (HTTP $status)" ;;
+    esac
     count="$(printf '%s' "$body" | jq 'length')"
     [ "$count" -gt 0 ] || break
     printf '%s\n' "$body" >> "$TMP/pages"
