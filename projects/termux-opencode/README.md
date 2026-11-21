@@ -20,12 +20,12 @@ bash projects/termux-opencode/bootstrap.sh
 
 1. **glibc compatibility layer** — installs `glibc-repo`, `glibc`, `patchelf-glibc`, `binutils-glibc`
 2. **Deps** — `curl jq tar ripgrep clang make git` (git is required to build the Bun wrapper from `tribixbite/bun-on-termux`), plus Node.js/npm
-3. **Downloads the official OpenCode binary** — the `opencode-linux-arm64.tar.gz` tarball for the exact release tag in `bootstrap.sh`, SHA-256 verified before extraction (mismatch aborts the install). The bootstrap pins versions for reproducibility; the generated `opencode-termux-update` now installs the latest release from GitHub (independent of the pinned version).
+3. **Downloads the official OpenCode binary** — the `opencode-linux-arm64.tar.gz` tarball for the exact release tag in `bootstrap.sh`, SHA-256 verified before extraction (mismatch aborts the install). The bootstrap pins versions for reproducibility; the generated `opencode-termux-update` now installs the latest v2 release from GitHub (independent of the pinned version).
 4. **Patchelf's the interpreter** — sets the binary's dynamic linker to Termux's glibc loader (`$PREFIX/glibc/lib/ld-linux-aarch64.so.1`)
 5. **Installs Bun** — official binary pinned to `bun-v1.3.14`, SHA-256 verified, stored as `buno`; launchers `bun`/`bunx` route through the `bun-termux` wrapper (or a shell wrapper fallback)
 6. **Bun launcher repair pass** — re-links the wrapper shim and re-points `bun`/`bunx` at the wrapper on every run (idempotent), so stale or partial installs self-heal
 7. **Creates launcher** — `$PREFIX/bin/opencode` with self-healing patchelf (re-applies after self-update)
-8. **Creates update script** — `$PREFIX/bin/opencode-termux-update` installs the latest release from GitHub after verifying its SHA-256
+8. **Creates update script** — `$PREFIX/bin/opencode-termux-update` installs the latest v2 release from GitHub after verifying its SHA-256
 9. **Configures DNS** — writes `nsswitch.conf` for glibc's NSS resolver
 
 ## How it works
@@ -96,17 +96,17 @@ The bootstrap does not export environment variables globally. Instead, the launc
 |---------|-------------|
 | `opencode` | Terminal UI |
 | `opencode web` | Web interface |
-| `opencode-termux-update` | Install the latest release from GitHub (SHA-256 verified, preserves launcher) |
+| `opencode-termux-update` | Install the latest v2 release from GitHub (SHA-256 verified, preserves launcher) |
 | `opencode providers` | Add API keys |
 | `bun` / `bunx` | Run OpenCode plugins via Bun |
 
-Never run `opencode update` directly — it restores the original interpreter and breaks the wrapper. Use `opencode-termux-update`, which installs the latest release from GitHub after verifying its SHA-256. To bump the pinned version in bootstrap (for reproducibility only), edit `OPENCODE_VERSION`/`OPENCODE_SHA256` (and `BUN_VERSION`/`BUN_SHA256` for Bun) at the top of `bootstrap.sh` and re-run bootstrap.
+Never run `opencode update` directly — it restores the original interpreter and breaks the wrapper. Use `opencode-termux-update`, which installs the latest v2 release from GitHub after verifying its SHA-256. To bump the pinned version in bootstrap (for reproducibility only), edit `OPENCODE_VERSION`/`OPENCODE_SHA256` (and `BUN_VERSION`/`BUN_SHA256` for Bun) at the top of `bootstrap.sh` and re-run bootstrap.
 
 ## Troubleshooting
 
 **`opencode` command not found** — restart the Termux session or run `source ~/.bashrc` to reload PATH.
 
-**glibc error on launch** — run `opencode-termux-update` to re-install the latest release and re-apply patchelf.
+**glibc error on launch** — run `opencode-termux-update` to re-install the latest v2 release and re-apply patchelf.
 
 **Bun/bunx fail or plugins won't load** — re-run the bootstrap. Its Bun-launcher repair pass re-links the wrapper shim and re-points `bun`/`bunx` at the wrapper on every run, so stale installs self-heal. If the `bun-on-termux` clone fails, the bootstrap falls back to shell wrappers automatically.
 

@@ -46,16 +46,16 @@ verify_sha256() {
 # ─── Pinned releases (edit these to bump versions) ──────────────────────────
 # Every download is verified against the pinned SHA-256 below before install.
 # Release sha256sums:
-#   OpenCode v1.18.15, asset opencode-linux-arm64.tar.gz — from the GitHub
-#     release asset digest (the release ships no SHA256SUMS file; the digest
-#     is the API's sha256 of the uploaded file). Reviewed here on 2026-08-08.
+#   OpenCode v2.3.2, asset opencode-linux-arm64.tar.gz — from the release's
+#     SHA256SUMS, cross-checked against the GitHub API asset digest.
+#     Reviewed here on 2026-11-22.
 #   Bun bun-v1.3.14, asset bun-linux-aarch64.zip — from the official
 #     SHASUMS256.txt shipped in that release. Verified here on 2026-08-08.
 #
 # To bump: set both the tag and the matching sha256, then re-run bootstrap.
-# `opencode-termux-update` installs exactly these pinned versions.
-OPENCODE_VERSION="v1.18.32"
-OPENCODE_SHA256="568461b7d4d8c19865c97e9a1102e613049c6039d01fe772154de873c1865840"
+# `opencode-termux-update` tracks the latest v2 release independently.
+OPENCODE_VERSION="v2.3.2"
+OPENCODE_SHA256="9d10185acdb72336e086e699ca363a6065f410fd3c1caed0dc8046e95ac06ccb"
 BUN_VERSION="bun-v1.3.14"
 BUN_SHA256="a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b"
 
@@ -437,11 +437,13 @@ info "Creating update script…"
 UPDATE_SCRIPT="$PREFIX/bin/opencode-termux-update"
 cat > "$UPDATE_SCRIPT" << 'UPDATE_SCRIPT'
 #!/data/data/com.termux/files/usr/bin/sh
-# opencode-termux-update — Install the latest OpenCode release
+# opencode-termux-update — Install the latest OpenCode v2 release
 #
-# Resolves the newest tagged release from GitHub, downloads its linux-arm64
-# asset, verifies it against the SHA-256 digest GitHub publishes for the
-# asset, and re-applies patchelf. Pre-releases are never picked up.
+# Resolves the newest v2.x tagged release from GitHub, downloads its
+# linux-arm64 asset, verifies it against the SHA-256 digest GitHub publishes
+# for the asset, and re-applies patchelf. Pre-releases are never picked up.
+# GitHub's /releases/latest can point at the v1 line, so the full release
+# list is filtered by tag instead.
 # Never run `opencode update` directly — it restores the original
 # interpreter and breaks the Termux wrapper.
 #
@@ -478,14 +480,15 @@ info "Current version: $CURRENT"
 
 command -v jq >/dev/null 2>&1 || err "jq is required — re-run bootstrap.sh to install it"
 
-# Resolve the latest release from the GitHub API (skips pre-releases)
-muted "Querying GitHub API for the latest release…"
-API="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" || err "Failed to query GitHub API")"
-TAG="$(printf '%s' "$API" | jq -r '.tag_name' || true)"
-[ -n "$TAG" ] && [ "$TAG" != "null" ] || err "No latest release found for $REPO"
+# Resolve the newest v2 release from the GitHub API (skips pre-releases)
+muted "Querying GitHub API for the latest v2 release…"
+API="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" || err "Failed to query GitHub API")"
+REL="$(printf '%s' "$API" | jq -c '[.[] | select(.prerelease == false) | select(.tag_name | startswith("v2."))] | sort_by(.published_at) | last')"
+TAG="$(printf '%s' "$REL" | jq -r '.tag_name // empty')"
+[ -n "$TAG" ] && [ "$TAG" != "null" ] || err "No v2 release found for $REPO"
 info "Latest release: $TAG"
 
-ASSET="$(printf '%s' "$API" | jq -c '[.assets[] | select(.name == "opencode-linux-arm64.tar.gz")][0]')"
+ASSET="$(printf '%s' "$REL" | jq -c '[.assets[] | select(.name == "opencode-linux-arm64.tar.gz")][0]')"
 [ -n "$ASSET" ] && [ "$ASSET" != "null" ] || err "Asset opencode-linux-arm64.tar.gz not found in $TAG"
 URL="$(printf '%s' "$ASSET" | jq -r '.browser_download_url')"
 DIGEST="$(printf '%s' "$ASSET" | jq -r '.digest // empty')"
