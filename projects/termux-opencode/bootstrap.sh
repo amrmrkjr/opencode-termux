@@ -480,18 +480,28 @@ info "Current version: $CURRENT"
 
 command -v jq >/dev/null 2>&1 || err "jq is required — re-run bootstrap.sh to install it"
 
-# Resolve the newest v2 release from the GitHub API (skips pre-releases)
-muted "Querying GitHub API for the latest v2 release…"
-API="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" || err "Failed to query GitHub API")"
-REL="$(printf '%s' "$API" | jq -c '[.[] | select(.prerelease == false) | select(.tag_name | startswith("v2."))] | sort_by(.published_at) | last')"
-TAG="$(printf '%s' "$REL" | jq -r '.tag_name // empty')"
-[ -n "$TAG" ] && [ "$TAG" != "null" ] || err "No v2 release found for $REPO"
-info "Latest release: $TAG"
+# Resolve an explicitly requested tag, or the newest v2 release by default.
+if [ -n "${OPENCODE_VERSION:-}" ]; then
+  TAG="$OPENCODE_VERSION"
+  muted "Resolving requested release $TAG…"
+  REL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/$TAG" || err "Release $TAG not found in $REPO")"
+  info "Requested release: $TAG"
+else
+  muted "Querying GitHub API for the latest v2 release…"
+  API="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" || err "Failed to query GitHub API")"
+  REL="$(printf '%s' "$API" | jq -c '[.[] | select(.prerelease == false) | select(.tag_name | startswith("v2."))] | sort_by(.published_at) | last')"
+  TAG="$(printf '%s' "$REL" | jq -r '.tag_name // empty')"
+  [ -n "$TAG" ] && [ "$TAG" != "null" ] || err "No v2 release found for $REPO"
+  info "Latest release: $TAG"
+fi
 
 ASSET="$(printf '%s' "$REL" | jq -c '[.assets[] | select(.name == "opencode-linux-arm64.tar.gz")][0]')"
 [ -n "$ASSET" ] && [ "$ASSET" != "null" ] || err "Asset opencode-linux-arm64.tar.gz not found in $TAG"
 URL="$(printf '%s' "$ASSET" | jq -r '.browser_download_url')"
 DIGEST="$(printf '%s' "$ASSET" | jq -r '.digest // empty')"
+if [ -n "${OPENCODE_VERSION:-}" ] && [ -z "$DIGEST" ]; then
+  err "No SHA-256 digest published for $TAG — refusing to install unverified"
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -533,6 +543,448 @@ UPDATE_SCRIPT
 chmod 755 "$UPDATE_SCRIPT"
 ok "update script created ($UPDATE_SCRIPT)"
 
+# ─── Create version installer ───────────────────────────────────────────────
+info "Creating version installer…"
+
+INSTALL_SCRIPT="$PREFIX/bin/opencode-termux-install"
+cat > "$INSTALL_SCRIPT" << 'INSTALL_SCRIPT'
+#!/data/data/com.termux/files/usr/bin/sh
+# opencode-termux-install — Pick an OpenCode release to install
+#
+# Shows a numbered menu of releases that have a Termux-compatible arm64
+# asset, then hands the chosen tag to opencode-termux-update. An exact tag
+# can be passed as an argument to skip the menu.
+set -eu
+
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOME_DIR="${HOME:-/data/data/com.termux/files/home}"
+UPDATE="$PREFIX/bin/opencode-termux-update"
+REPO="anomalyco/opencode"
+PAGE_SIZE=25
+
+GREEN='\033[0;32m'
+DIM='\033[0;2m'
+NC='\033[0m'
+info()  { printf "${GREEN}◆${NC} %s\n" "$*"; }
+muted() { printf "${DIM}  %s${NC}\n" "$*"; }
+err()   { printf "\033[0;31m  ✗${NC} %s\n" "$*" >&2; exit 1; }
+
+[ -x "$UPDATE" ] || err "opencode-termux-update not found — re-run bootstrap.sh"
+command -v jq >/dev/null 2>&1 || err "jq is required — re-run bootstrap.sh"
+
+if [ "$#" -gt 0 ]; then
+  TAG="$1"
+else
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  : > "$TMP/pages"
+
+  CACHE_DIR="$HOME_DIR/.cache/opencode-termux"
+  mkdir -p "$CACHE_DIR" 2>/dev/null || true
+  CACHE="$CACHE_DIR/versions.json"
+  CACHE_TS="$CACHE_DIR/versions.ts"
+
+  api_get() {
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" -w '\n%{http_code}' "$1"
+    else
+      curl -sS -w '\n%{http_code}' "$1"
+    fi
+  }
+
+  use_cache=0
+  if [ -s "$CACHE" ] && [ -s "$CACHE_TS" ]; then
+    cached_at="$(cat "$CACHE_TS")"
+    now="$(date +%s)"
+    case "$cached_at" in
+      ''|*[!0-9]*) ;;
+      *) if [ $((now - cached_at)) -lt 86400 ]; then use_cache=1; fi ;;
+    esac
+  fi
+
+  if [ "$use_cache" -eq 0 ]; then
+    # GitHub 422 = past its 1000-result window; 403 = unauthenticated rate limit.
+    page=1
+    while [ "$page" -le 20 ]; do
+      response="$(api_get "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page")" || {
+        if [ -s "$CACHE" ]; then
+          muted "GitHub API unavailable — using cached version list"
+          use_cache=1
+          break
+        fi
+        err "Failed to query GitHub API — check your connection"
+      }
+      status="$(printf '%s\n' "$response" | tail -1)"
+      body="$(printf '%s\n' "$response" | sed '$d')"
+      case "$status" in
+        200) ;;
+        422) break ;;
+        403)
+          if [ -s "$CACHE" ]; then
+            muted "GitHub API rate limit reached — using cached version list"
+            use_cache=1
+            break
+          fi
+          err "GitHub API rate limit reached for this IP (60 requests/hour). Wait up to an hour, or set GITHUB_TOKEN for a higher limit. You can still install a known tag: opencode-termux-install <tag>"
+          ;;
+        *)
+          if [ -s "$CACHE" ]; then
+            muted "GitHub API error (HTTP $status) — using cached version list"
+            use_cache=1
+            break
+          fi
+          err "Failed to query GitHub API (HTTP $status)"
+          ;;
+      esac
+      count="$(printf '%s' "$body" | jq 'length')"
+      [ "$count" -gt 0 ] || break
+      printf '%s\n' "$body" >> "$TMP/pages"
+      page=$((page + 1))
+    done
+  fi
+
+  if [ "$use_cache" -eq 1 ]; then
+    cp "$CACHE" "$TMP/list"
+  else
+    # Keep only releases with an opencode-linux-arm64.tar.gz asset.
+    jq -s 'add | [
+      .[]
+      | select(any(.assets[]?; .name == "opencode-linux-arm64.tar.gz"))
+      | . as $rel
+      | {tag: .tag_name,
+         ts: ($rel.published_at // $rel.created_at // ""),
+         date: (($rel.published_at // $rel.created_at // "") | .[0:10]),
+         pre: .prerelease}
+    ] | sort_by(.ts) | reverse' "$TMP/pages" > "$TMP/list"
+    cp "$TMP/list" "$CACHE"
+    date +%s > "$CACHE_TS"
+  fi
+
+  TOTAL="$(jq 'length' "$TMP/list")"
+  [ "$TOTAL" -gt 0 ] || err "No installable OpenCode releases found for $REPO"
+
+  START=1
+  while :; do
+    END=$((START + PAGE_SIZE - 1))
+    [ "$END" -le "$TOTAL" ] || END="$TOTAL"
+    echo ""
+    info "Available OpenCode versions ($START–$END of $TOTAL)"
+    echo ""
+    jq -r --argjson s "$START" --argjson e "$END" '
+      .[$s - 1:$e] | to_entries[] |
+      "  \(.key + $s)) \(.value.tag)  \(.value.date)\(if .value.pre then "  (pre-release)" else "" end)"
+    ' "$TMP/list"
+    echo ""
+    muted "[n]ext page  [p]revious page  [q]uit  or type a number"
+    printf 'Select version: '
+    read -r CHOICE || exit 0
+    case "$CHOICE" in
+      q|Q) exit 0 ;;
+      n|N)
+        if [ "$END" -lt "$TOTAL" ]; then START=$((END + 1)); else muted "Already on the last page"; fi
+        ;;
+      p|P)
+        if [ "$START" -gt 1 ]; then
+          CUR=$(( (START - 1) / PAGE_SIZE + 1 ))
+          START=$(( (CUR - 2) * PAGE_SIZE + 1 ))
+          [ "$START" -gt 0 ] || START=1
+        else
+          muted "Already on the first page"
+        fi
+        ;;
+      ''|*[!0-9]*) muted "Enter a number, n, p, or q" ;;
+      *)
+        if [ "$CHOICE" -ge "$START" ] && [ "$CHOICE" -le "$END" ]; then
+          TAG="$(jq -r ".[$CHOICE - 1].tag" "$TMP/list")"
+          break
+        fi
+        muted "Number out of range (choose $START–$END)"
+        ;;
+    esac
+  done
+fi
+
+muted "Installing $TAG…"
+export OPENCODE_VERSION="$TAG"
+exec "$UPDATE"
+INSTALL_SCRIPT
+
+chmod 755 "$INSTALL_SCRIPT"
+ok "version installer created ($INSTALL_SCRIPT)"
+
+# ─── Create Bun update script ───────────────────────────────────────────────
+info "Creating Bun update script…"
+
+BUN_UPDATE_SCRIPT="$PREFIX/bin/opencode-termux-bun-update"
+cat > "$BUN_UPDATE_SCRIPT" << 'BUN_UPDATE_SCRIPT'
+#!/data/data/com.termux/files/usr/bin/sh
+# opencode-termux-bun-update — Install a Bun release
+#
+# By default installs the newest stable Bun release. If BUN_VERSION is set,
+# that exact tag is installed instead (used by opencode-termux-bun-install).
+# The bun-linux-aarch64.zip is verified against that release's SHASUMS256.txt
+# before it replaces ~/.bun/bin/buno. The bun/bunx launchers are untouched.
+set -eu
+
+# termux-exec preload breaks glibc binaries — unset it before any binary call
+unset LD_PRELOAD
+
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOME_DIR="${HOME:-/data/data/com.termux/files/home}"
+BUN_DIR="$HOME_DIR/.bun"
+BUN_BIN="$BUN_DIR/bin/buno"
+BUN_WRAPPER="$BUN_DIR/bin/bun-termux"
+BUN_SHIM="$BUN_DIR/lib/bun-shim.so"
+GLD="$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
+PE="$PREFIX/glibc/bin/patchelf"
+REPO="oven-sh/bun"
+ASSET_NAME="bun-linux-aarch64.zip"
+SUMS_NAME="SHASUMS256.txt"
+
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+DIM='\033[0;2m'
+NC='\033[0m'
+info()  { printf "${GREEN}◆${NC} %s\n" "$*"; }
+err()   { printf "${RED}  ✗${NC} %s\n" "$*" >&2; exit 1; }
+muted() { printf "${DIM}  %s${NC}\n" "$*"; }
+
+command -v jq >/dev/null 2>&1 || err "jq is required — re-run bootstrap.sh to install it"
+command -v unzip >/dev/null 2>&1 || err "unzip is required — re-run bootstrap.sh to install it"
+
+# Resolve an explicitly requested tag, or the newest installable stable release.
+if [ -n "${BUN_VERSION:-}" ]; then
+  TAG="$BUN_VERSION"
+  muted "Resolving requested release $TAG…"
+  REL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/$TAG" || err "Release $TAG not found in $REPO")"
+  info "Requested release: $TAG"
+else
+  muted "Querying GitHub API for the latest Bun release…"
+  API="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" || err "Failed to query GitHub API")"
+  REL="$(printf '%s' "$API" | jq -c '[.[] | select(.prerelease == false) | select(any(.assets[]?; .name == "bun-linux-aarch64.zip") and any(.assets[]?; .name == "SHASUMS256.txt"))] | sort_by(.published_at) | last')"
+  TAG="$(printf '%s' "$REL" | jq -r '.tag_name // empty')"
+  [ -n "$TAG" ] && [ "$TAG" != "null" ] || err "No installable Bun release found for $REPO"
+  info "Latest release: $TAG"
+fi
+
+ZIP_URL="$(printf '%s' "$REL" | jq -r --arg n "$ASSET_NAME" '[.assets[] | select(.name == $n)][0].browser_download_url // empty')"
+SUMS_URL="$(printf '%s' "$REL" | jq -r --arg n "$SUMS_NAME" '[.assets[] | select(.name == $n)][0].browser_download_url // empty')"
+[ -n "$ZIP_URL" ] || err "Asset $ASSET_NAME not found in $TAG"
+[ -n "$SUMS_URL" ] || err "Asset $SUMS_NAME not found in $TAG"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+muted "Downloading $TAG…"
+curl -fsSL "$ZIP_URL" -o "$TMP/bun.zip" || err "Download failed"
+curl -fsSL "$SUMS_URL" -o "$TMP/SHASUMS256.txt" || err "Failed to download $SUMS_NAME"
+
+EXPECTED="$(awk -v name="$ASSET_NAME" '$2 == name {print $1; exit}' "$TMP/SHASUMS256.txt")"
+[ -n "$EXPECTED" ] || err "No SHA-256 checksum for $ASSET_NAME in $TAG — refusing to install unverified"
+ACTUAL="$(sha256sum "$TMP/bun.zip" | awk '{print $1}')"
+[ "$ACTUAL" = "$EXPECTED" ] || err "SHA-256 mismatch for $TAG: expected $EXPECTED, got $ACTUAL — aborting (tampered download)"
+muted "SHA-256 verified"
+
+unzip -oq "$TMP/bun.zip" -d "$TMP" || err "Extraction failed"
+BUN_EXE="$(find "$TMP" -type f -name bun | head -1)"
+[ -n "$BUN_EXE" ] || err "Bun binary not found in archive"
+
+mkdir -p "$BUN_DIR/bin"
+install -m755 "$BUN_EXE" "$BUN_BIN"
+rm -rf "$TMP"
+trap - EXIT
+
+# Re-apply the glibc interpreter after the binary swap.
+unset LD_PRELOAD
+if [ -x "$PE" ]; then
+  "$PE" --set-interpreter "$GLD" "$BUN_BIN" || err "patchelf failed"
+else
+  muted "patchelf not found — re-run bootstrap.sh to repair the glibc layer"
+fi
+
+# The wrapper expects the shim at ~/.bun/bin/lib/bun-shim.so.
+if [ -x "$BUN_WRAPPER" ]; then
+  mkdir -p "$BUN_DIR/bin/lib"
+  [ -f "$BUN_SHIM" ] && ln -sf "$BUN_SHIM" "$BUN_DIR/bin/lib/bun-shim.so" || true
+fi
+
+NEW="$("$BUN_BIN" --version 2>/dev/null | head -1 || echo "installed")"
+info "Bun updated to $TAG: $NEW"
+BUN_UPDATE_SCRIPT
+
+chmod 755 "$BUN_UPDATE_SCRIPT"
+ok "Bun update script created ($BUN_UPDATE_SCRIPT)"
+
+# ─── Create Bun version installer ───────────────────────────────────────────
+info "Creating Bun version installer…"
+
+BUN_INSTALL_SCRIPT="$PREFIX/bin/opencode-termux-bun-install"
+cat > "$BUN_INSTALL_SCRIPT" << 'BUN_INSTALL_SCRIPT'
+#!/data/data/com.termux/files/usr/bin/sh
+# opencode-termux-bun-install — Pick a Bun release to install
+#
+# Shows a numbered menu of releases that have both bun-linux-aarch64.zip and
+# SHASUMS256.txt, then hands the chosen tag to opencode-termux-bun-update.
+# An exact tag can be passed as an argument to skip the menu.
+set -eu
+
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOME_DIR="${HOME:-/data/data/com.termux/files/home}"
+UPDATE="$PREFIX/bin/opencode-termux-bun-update"
+REPO="oven-sh/bun"
+PAGE_SIZE=25
+
+GREEN='\033[0;32m'
+DIM='\033[0;2m'
+NC='\033[0m'
+info()  { printf "${GREEN}◆${NC} %s\n" "$*"; }
+muted() { printf "${DIM}  %s${NC}\n" "$*"; }
+err()   { printf "\033[0;31m  ✗${NC} %s\n" "$*" >&2; exit 1; }
+
+[ -x "$UPDATE" ] || err "opencode-termux-bun-update not found — re-run bootstrap.sh"
+command -v jq >/dev/null 2>&1 || err "jq is required — re-run bootstrap.sh"
+
+if [ "$#" -gt 0 ]; then
+  TAG="$1"
+else
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  : > "$TMP/pages"
+
+  CACHE_DIR="$HOME_DIR/.cache/opencode-termux"
+  mkdir -p "$CACHE_DIR" 2>/dev/null || true
+  CACHE="$CACHE_DIR/bun-versions.json"
+  CACHE_TS="$CACHE_DIR/bun-versions.ts"
+
+  api_get() {
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" -w '\n%{http_code}' "$1"
+    else
+      curl -sS -w '\n%{http_code}' "$1"
+    fi
+  }
+
+  use_cache=0
+  if [ -s "$CACHE" ] && [ -s "$CACHE_TS" ]; then
+    cached_at="$(cat "$CACHE_TS")"
+    now="$(date +%s)"
+    case "$cached_at" in
+      ''|*[!0-9]*) ;;
+      *) if [ $((now - cached_at)) -lt 86400 ]; then use_cache=1; fi ;;
+    esac
+  fi
+
+  if [ "$use_cache" -eq 0 ]; then
+    # GitHub 422 = past its 1000-result window; 403 = unauthenticated rate limit.
+    page=1
+    while [ "$page" -le 20 ]; do
+      response="$(api_get "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page")" || {
+        if [ -s "$CACHE" ]; then
+          muted "GitHub API unavailable — using cached version list"
+          use_cache=1
+          break
+        fi
+        err "Failed to query GitHub API — check your connection"
+      }
+      status="$(printf '%s\n' "$response" | tail -1)"
+      body="$(printf '%s\n' "$response" | sed '$d')"
+      case "$status" in
+        200) ;;
+        422) break ;;
+        403)
+          if [ -s "$CACHE" ]; then
+            muted "GitHub API rate limit reached — using cached version list"
+            use_cache=1
+            break
+          fi
+          err "GitHub API rate limit reached for this IP (60 requests/hour). Wait up to an hour, or set GITHUB_TOKEN for a higher limit. You can still install a known tag: opencode-termux-bun-install <tag>"
+          ;;
+        *)
+          if [ -s "$CACHE" ]; then
+            muted "GitHub API error (HTTP $status) — using cached version list"
+            use_cache=1
+            break
+          fi
+          err "Failed to query GitHub API (HTTP $status)"
+          ;;
+      esac
+      count="$(printf '%s' "$body" | jq 'length')"
+      [ "$count" -gt 0 ] || break
+      printf '%s\n' "$body" >> "$TMP/pages"
+      page=$((page + 1))
+    done
+  fi
+
+  if [ "$use_cache" -eq 1 ]; then
+    cp "$CACHE" "$TMP/list"
+  else
+    # Only releases with both the arm64 zip and its checksum can be installed.
+    jq -s 'add | [
+      .[]
+      | select(any(.assets[]?; .name == "bun-linux-aarch64.zip"))
+      | select(any(.assets[]?; .name == "SHASUMS256.txt"))
+      | . as $rel
+      | {tag: .tag_name,
+         ts: ($rel.published_at // $rel.created_at // ""),
+         date: (($rel.published_at // $rel.created_at // "") | .[0:10]),
+         pre: .prerelease}
+    ] | sort_by(.ts) | reverse' "$TMP/pages" > "$TMP/list"
+    cp "$TMP/list" "$CACHE"
+    date +%s > "$CACHE_TS"
+  fi
+
+  TOTAL="$(jq 'length' "$TMP/list")"
+  [ "$TOTAL" -gt 0 ] || err "No installable Bun releases found for $REPO"
+
+  START=1
+  while :; do
+    END=$((START + PAGE_SIZE - 1))
+    [ "$END" -le "$TOTAL" ] || END="$TOTAL"
+    echo ""
+    info "Available Bun versions ($START–$END of $TOTAL)"
+    echo ""
+    jq -r --argjson s "$START" --argjson e "$END" '
+      .[$s - 1:$e] | to_entries[] |
+      "  \(.key + $s)) \(.value.tag)  \(.value.date)\(if .value.pre then "  (pre-release)" else "" end)"
+    ' "$TMP/list"
+    echo ""
+    muted "[n]ext page  [p]revious page  [q]uit  or type a number"
+    printf 'Select version: '
+    read -r CHOICE || exit 0
+    case "$CHOICE" in
+      q|Q) exit 0 ;;
+      n|N)
+        if [ "$END" -lt "$TOTAL" ]; then START=$((END + 1)); else muted "Already on the last page"; fi
+        ;;
+      p|P)
+        if [ "$START" -gt 1 ]; then
+          CUR=$(( (START - 1) / PAGE_SIZE + 1 ))
+          START=$(( (CUR - 2) * PAGE_SIZE + 1 ))
+          [ "$START" -gt 0 ] || START=1
+        else
+          muted "Already on the first page"
+        fi
+        ;;
+      ''|*[!0-9]*) muted "Enter a number, n, p, or q" ;;
+      *)
+        if [ "$CHOICE" -ge "$START" ] && [ "$CHOICE" -le "$END" ]; then
+          TAG="$(jq -r ".[$CHOICE - 1].tag" "$TMP/list")"
+          break
+        fi
+        muted "Number out of range (choose $START–$END)"
+        ;;
+    esac
+  done
+fi
+
+muted "Installing $TAG…"
+export BUN_VERSION="$TAG"
+exec "$UPDATE"
+BUN_INSTALL_SCRIPT
+
+chmod 755 "$BUN_INSTALL_SCRIPT"
+ok "Bun version installer created ($BUN_INSTALL_SCRIPT)"
+
 # ─── Summary ────────────────────────────────────────────────────────────────
 echo ""
 info "${BOLD}Install complete${NC}"
@@ -544,12 +996,16 @@ echo ""
   BUN_V="$("$PREFIX/bin/bun" --version 2>/dev/null || echo 'not installed')"
   printf "  ${GREEN}Bun:${NC}        %s\n" "$BUN_V"
   printf "  ${GREEN}Update:${NC}     %s\n" "$UPDATE_SCRIPT"
+  printf "  ${GREEN}Bun update:${NC} %s\n" "$BUN_UPDATE_SCRIPT"
   echo ""
   info "${BOLD}Usage${NC}"
   echo ""
   printf '%s\n' "  ${GREEN}opencode${NC}                Terminal UI"
   printf '%s\n' "  ${GREEN}opencode web${NC}            Web interface"
   printf '%s\n' "  ${GREEN}opencode-termux-update${NC}  Safe update (preserves launcher)"
+  printf '%s\n' "  ${GREEN}opencode-termux-install${NC} Pick any version from a menu"
+  printf '%s\n' "  ${GREEN}opencode-termux-bun-update${NC}   Install the newest Bun release"
+  printf '%s\n' "  ${GREEN}opencode-termux-bun-install${NC} Pick any Bun version from a menu"
   printf '%s\n' "  ${GREEN}opencode providers${NC}      Add API keys"
   printf '%s\n' "  ${GREEN}bunx${NC}                    Run OpenCode plugins via Bun"
   echo ""
